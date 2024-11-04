@@ -178,6 +178,7 @@ public class Transportation implements
   private static final Set<Integer> ONEWAY_VALUES = Set.of(-1, 1);
   private final Map<String, Integer> MINZOOMS;
   private static final String LIMIT_MERGE_TAG = "__limit_merge";
+  private static final String OSM_ID_MERGE_TAG = "__osm_id_merge";
   private final AtomicBoolean loggedNoGb = new AtomicBoolean(false);
   private final AtomicBoolean loggedNoIreland = new AtomicBoolean(false);
   private final boolean z13Paths;
@@ -472,6 +473,8 @@ public class Transportation implements
     RouteRelation routeRelation = getRouteRelation(element);
     RouteNetwork networkType = routeRelation != null ? routeRelation.networkType : null;
 
+    String name = nullIfEmpty(element.name());
+
     String highway = element.highway();
     String highwayClass = highwayClass(element.highway(), element.publicTransport(), element.construction(),
       element.manMade());
@@ -515,6 +518,8 @@ public class Transportation implements
         .setAttrWithMinzoom(Fields.SERVICE, service, 12)
         .setAttrWithMinzoom(Fields.ONEWAY, nullIfInt(element.isOneway(), 0), 12)
         .setAttrWithMinzoom(Fields.SURFACE, surface(coalesce(element.surface(), element.tracktype())), 12)
+        // max zoom only
+        .setAttrWithMinzoom("name", name, config.maxzoom())
         .setMinPixelSize(0) // merge during post-processing, then limit by size
         .setSortKey(element.zOrder())
         .setMinZoom(minzoom);
@@ -672,6 +677,7 @@ public class Transportation implements
   public List<VectorTile.Feature> postProcess(int zoom, List<VectorTile.Feature> items) {
     double tolerance = config.tolerance(zoom);
     double minLength = coalesce(MIN_LENGTH.apply(zoom), 0).doubleValue();
+    boolean isMaxZoom = (zoom == config.maxzoom());
 
     // don't merge road segments with oneway tag
     // TODO merge preserving oneway instead ignoring
@@ -681,12 +687,18 @@ public class Transportation implements
       if (oneway instanceof Number n && ONEWAY_VALUES.contains(n.intValue())) {
         item.tags().put(LIMIT_MERGE_TAG, onewayId++);
       }
+      if (isMaxZoom) {
+        item.tags().put(OSM_ID_MERGE_TAG, item.id());
+      }
     }
 
     var merged = FeatureMerge.mergeLineStrings(items, minLength, tolerance, BUFFER_SIZE);
 
     for (var item : merged) {
       item.tags().remove(LIMIT_MERGE_TAG);
+      if (isMaxZoom) {
+        item.tags().remove(OSM_ID_MERGE_TAG);
+      }
     }
     return merged;
   }
