@@ -520,6 +520,7 @@ public class Transportation implements
         .setAttrWithMinzoom(Fields.SURFACE, surface(coalesce(element.surface(), element.tracktype())), 12)
         // max zoom only
         .setAttrWithMinzoom("name", name, config.maxzoom())
+        .setAttrWithMinzoom("junction", nullIfEmpty(element.junction()), config.maxzoom())
         .setMinPixelSize(0) // merge during post-processing, then limit by size
         .setSortKey(element.zOrder())
         .setMinZoom(minzoom);
