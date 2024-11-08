@@ -102,8 +102,11 @@ public class Building implements
     entry("clay", "#9d8b75") // same as mud
   );
   private final boolean mergeZ13Buildings;
+  private final PlanetilerConfig config;
+  private static final String OSM_ID_MERGE_TAG = "__osm_id_merge";
 
   public Building(Translations translations, PlanetilerConfig config, Stats stats) {
+    this.config = config;
     this.mergeZ13Buildings = config.arguments().getBoolean(
       "building_merge_z13",
       "building layer: merge nearby buildings at z13",
@@ -178,10 +181,26 @@ public class Building implements
   @Override
   public List<VectorTile.Feature> postProcess(int zoom,
     List<VectorTile.Feature> items) throws GeometryException {
-    return (mergeZ13Buildings && zoom == 13) ?
+
+    boolean isMaxZoom = (zoom == config.maxzoom());
+    if (isMaxZoom) {
+      // At maximum zoom we don't want to merge all of the building together, we want ones with names to be preserved
+      for (var item : items) {
+        item.tags().put(OSM_ID_MERGE_TAG, item.id());
+      }
+    }
+
+    var merged = (mergeZ13Buildings && zoom == 13) ?
       FeatureMerge.mergeNearbyPolygons(items, 4, 4, 0.5, 0.5) :
       // reduces the size of some heavy z14 tiles with many small buildings by 60% or more
       FeatureMerge.mergeMultiPolygon(items);
+
+    if (isMaxZoom) {
+      for (var item : merged) {
+        item.tags().remove(OSM_ID_MERGE_TAG);
+      }
+    }
+    return merged;
   }
 
   private record BuildingRelationInfo(long id) implements OsmRelationInfo {
