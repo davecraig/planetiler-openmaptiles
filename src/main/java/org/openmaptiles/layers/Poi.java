@@ -127,11 +127,13 @@ public class Poi implements
   private final Translations translations;
   private final Stats stats;
   private final Map<String, List<Tables.OsmPoiPoint>> aggStops = new HashMap<>();
+  private final PlanetilerConfig config;
 
   public Poi(Translations translations, PlanetilerConfig config, Stats stats) {
     this.classMapping = FieldMappings.Class.index();
     this.translations = translations;
     this.stats = stats;
+    this.config = config;
   }
 
   static int poiClassRank(String clazz) {
@@ -318,6 +320,9 @@ public class Poi implements
       .setAttr(Fields.LEVEL, Parse.parseLongOrNull(element.source().getTag("level")))
       .setAttr(Fields.INDOOR, element.indoor() ? 1 : null)
       .setAttr(Fields.AGG_STOP, aggStop)
+      .setAttrWithMinzoom("naptanCode", element.source().getTag("naptan:NaptanCode"), config.maxzoom())
+      .setAttrWithMinzoom("naptanAtcoCode", element.source().getTag("naptan:AtcoCode"), config.maxzoom())
+      .setAttrWithMinzoom("naptanBearing", element.source().getTag("naptan:Bearing"), config.maxzoom())
       .putAttrs(OmtLanguageUtils.getNames(element.source().tags(), translations))
       .setPointLabelGridPixelSize(14, 64)
       .setSortKey(rankOrder)
