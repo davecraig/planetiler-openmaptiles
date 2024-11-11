@@ -261,6 +261,11 @@ public class Poi implements
 
   @Override
   public void process(Tables.OsmPoiPolygon element, FeatureCollector features) {
+    // Soundscape - add two POI, one at a point for maplibre, and another with the
+    // polygon for our GeoJSON. We put the Polygon first so that our GeoJSON parsing
+    // can simply use the first instance it finds and that will either be a polygon or
+    // a point.
+    setupPoiFeature(element, features.polygon(LAYER_NAME), null);
     setupPoiFeature(element, features.centroidIfConvex(LAYER_NAME), null);
   }
 
