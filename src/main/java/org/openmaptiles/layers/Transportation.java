@@ -93,6 +93,7 @@ public class Transportation implements
   Tables.OsmRailwayLinestring.Handler,
   Tables.OsmShipwayLinestring.Handler,
   Tables.OsmHighwayPolygon.Handler,
+  Tables.OsmHighwayPoint.Handler,
   OpenMapTilesProfile.NaturalEarthProcessor,
   ForwardingProfile.LayerPostProcessor,
   ForwardingProfile.OsmRelationPreprocessor,
@@ -530,6 +531,28 @@ public class Transportation implements
           .setAttr(Fields.LEVEL, Parse.parseLongOrNull(element.source().getTag("level")))
           .setAttr(Fields.INDOOR, element.indoor() ? 1 : null);
       }
+    }
+  }
+
+  @Override
+  public void process(Tables.OsmHighwayPoint element, FeatureCollector features) {
+    long id = element.source().id();
+    String crossing = element.crossing();
+    if ((crossing != null) && !crossing.isEmpty()) {
+      String ref = element.ref();
+      features.point(LAYER_NAME)
+        .setBufferPixels(BUFFER_SIZE)
+        .setAttr(Fields.CLASS, "crossing")
+        .setAttr(Fields.LAYER, nullIfLong(element.layer(), 0))
+        .setAttr("crossing", crossing)
+        .setAttr("button_operated", element.source().getTag("button_operated"))
+        .setAttr("crossing:island", element.source().getTag("crossing:island"))
+        .setAttr("crossing:markings", element.source().getTag("crossing:markings"))
+        .setAttr("kerb", element.source().getTag("kerb"))
+        .setAttr("tactile_paving", element.source().getTag("tactile_paving"))
+        .setAttr("traffic_signals:sound", element.source().getTag("traffic_signals:sound"))
+        .setSortKeyDescending(element.zOrder())
+        .setMinZoom(15);
     }
   }
 
