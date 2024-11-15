@@ -269,8 +269,9 @@ public class Poi implements
     setupPoiFeature(element, features.centroidIfConvex(LAYER_NAME), null);
   }
 
-  private <T extends Tables.WithSubclass & Tables.WithStation & Tables.WithFunicular & Tables.WithSport & Tables.WithInformation & Tables.WithReligion & Tables.WithMappingKey & Tables.WithName & Tables.WithIndoor & Tables.WithLayer & Tables.WithSource & Tables.WithOperator & Tables.WithNetwork & Tables.WithBrand & Tables.WithRef> void setupPoiFeature(
+  private <T extends Tables.WithSubclass & Tables.WithStation & Tables.WithEntrance & Tables.WithFunicular & Tables.WithSport & Tables.WithInformation & Tables.WithReligion & Tables.WithMappingKey & Tables.WithName & Tables.WithIndoor & Tables.WithLayer & Tables.WithSource & Tables.WithOperator & Tables.WithNetwork & Tables.WithBrand & Tables.WithRef> void setupPoiFeature(
     T element, FeatureCollector.Feature output, Integer aggStop) {
+
     String rawSubclass = element.subclass();
     if ("station".equals(rawSubclass) && "subway".equals(element.station())) {
       rawSubclass = "subway";
@@ -316,6 +317,13 @@ public class Poi implements
       // universities that are at least 10% of a tile may appear from Z10
       output.setMinPixelSizeBelowZoom(13, 80); // 80x80px is ~10% of a 256x256px tile
       minzoom = 10;
+    }
+
+    if ("entrance".equals(element.mappingKey())) {
+      poiClass = element.mappingKey();
+      subclass = element.entrance();
+      //	LOGGER.info(" {} {}", poiClass, subclass);
+      minzoom = 15;
     }
 
     output.setBufferPixels(BUFFER_SIZE)

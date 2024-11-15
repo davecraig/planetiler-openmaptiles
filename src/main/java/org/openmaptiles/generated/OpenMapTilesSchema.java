@@ -1830,6 +1830,7 @@ public class OpenMapTilesSchema {
       /**
        * Original value of either the <a href="http://wiki.openstreetmap.org/wiki/Key:amenity"><code>amenity</code></a>,
        * <a href="http://wiki.openstreetmap.org/wiki/Key:barrier"><code>barrier</code></a>,
+       * <a href="http://wiki.openstreetmap.org/wiki/Key:entrance"><code>entrance</code></a>,
        * <a href="http://wiki.openstreetmap.org/wiki/Key:historic"><code>historic</code></a>,
        * <a href="http://wiki.openstreetmap.org/wiki/Key:information"><code>information</code></a>,
        * <a href="http://wiki.openstreetmap.org/wiki/Key:landuse"><code>landuse</code></a>,
