@@ -522,6 +522,7 @@ public class Transportation implements
         // max zoom only
         .setAttrWithMinzoom("name", name, config.maxzoom())
         .setAttrWithMinzoom("junction", nullIfEmpty(element.junction()), config.maxzoom())
+        .setAttrWithMinzoom("footway", nullIfEmpty(element.footway()), config.maxzoom())
         .setMinPixelSize(0) // merge during post-processing, then limit by size
         .setSortKey(element.zOrder())
         .setMinZoom(minzoom);
