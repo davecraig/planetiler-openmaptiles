@@ -540,6 +540,8 @@ def main():
     iso_filter = set([s.strip() for s in args.admin1_iso_a3.split(",")]) if args.admin1_iso_a3 else None
     states = load_admin1(admin1_path, only_iso_a3=iso_filter)
 
+    countryToContinent = {}
+
     features = []
 
     # Countries
@@ -551,6 +553,7 @@ def main():
         for v in iso_filter:
             if v == iso_a3_value:
                 add_country = False
+                countryToContinent[v] = raw_props["continent"]
 
         if raw_props["name"] == "Antarctica":
             add_country = False
@@ -568,6 +571,7 @@ def main():
     for _, row in states.iterrows():
         raw_props = {k: row[k] for k in states.columns if k != "geometry"}
         raw_props["feature_type"] = "admin1"
+        raw_props["continent"] = countryToContinent[raw_props["iso_a3"]]
         features.append({
             "type": "Feature",
             "geometry": mapping(row.geometry),
