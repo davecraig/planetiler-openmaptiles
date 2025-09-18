@@ -195,7 +195,7 @@ def load_cities(pop_threshold: int, pop_path: Path) -> gpd.GeoDataFrame:
     gdf = gdf[gdf[pop_field].fillna(0) >= pop_threshold].copy()
 
     # Keep tidy columns (presence-checked)
-    keep = [c for c in ["NAME", "NAMEASCII", "ADM0NAME", "ADM0_A3", pop_field] if c in gdf.columns]
+    keep = [c for c in ["name", "name_ascii", "country_name", "adm0name", "adm0_a3", pop_field] if c in gdf.columns]
     gdf = gdf[keep + ["geometry"]]
 
     # Normalize
@@ -474,13 +474,13 @@ def cluster_cities(
 
             # Aggregate props (selected set)
             names_sel = pick_first_nonnull(used, ["name", "NAME", "name_ascii", "NAMEASCII", "Name"], "Unknown")
-            countries_sel = pick_first_nonnull(used, ["country_name", "ADM0NAME", "SOVEREIGNT", "ADMIN"], "Unknown")
-            iso_sel = pick_first_nonnull(used, ["iso_a3", "ADM0_A3", "ISO_A3"], "")
+            countries_sel = pick_first_nonnull(used, ["country_name", "adm0name", "SOVEREIGNT", "ADMIN"], "Unknown")
+            iso_sel = pick_first_nonnull(used, ["iso_a3", "adm0_a3"], "")
 
             # Anchor props
             anchor_name = pick_first_nonnull(block.loc[[anchor_idx]], ["name", "NAME", "name_ascii", "NAMEASCII", "Name"], "Unknown").iloc[0]
-            anchor_country = pick_first_nonnull(block.loc[[anchor_idx]], ["country_name", "ADM0NAME", "SOVEREIGNT", "ADMIN"], "Unknown").iloc[0]
-            anchor_iso = pick_first_nonnull(block.loc[[anchor_idx]], ["iso_a3", "ADM0_A3", "ISO_A3"], "").iloc[0]
+            anchor_country = pick_first_nonnull(block.loc[[anchor_idx]], ["country_name", "adm0name", "SOVEREIGNT", "ADMIN"], "Unknown").iloc[0]
+            anchor_iso = pick_first_nonnull(block.loc[[anchor_idx]], ["iso_a3", "adm0_a3"], "").iloc[0]
 
             total_pop_used = int(used["_pop"].sum())
             records.append({
@@ -525,58 +525,66 @@ def main():
     ap.add_argument("--cluster-sample", choices=["top", "random"], default="top", help="How to choose cities inside each cluster when limiting: 'top' by population or 'random'.")
     ap.add_argument("--seed", type=int, default=42, help="Random seed used when --cluster-sample=random.")
     ap.add_argument("--buffer-km", type=float, default=50.0, help="Border distance around city clusters")
-    ap.add_argument("--proximity-radius-km", type=float, default=150.0, help="Optional: include only cities within this radius of the anchor (largest city). Applied before --max-cities-per-cluster.")
-    ap.add_argument("--max-cities-per-extract", type=int, default=40, help="Per-extract cap (anchor + nearest neighbors). If omitted, includes all neighbors.")
+    ap.add_argument("--proximity-radius-km", type=float, default=80.0, help="Optional: include only cities within this radius of the anchor (largest city). Applied before --max-cities-per-cluster.")
+    ap.add_argument("--max-cities-per-extract", type=int, default=20, help="Per-extract cap (anchor + nearest neighbors). If omitted, includes all neighbors.")
     ap.add_argument("--admin1-iso-a3", default="USA,CAN,CHN,JPN,IND,RUS,DEU,POL,BRA,AUS", help="Optional comma-separated ISO A3 list to include (e.g. 'USA,CAN,AUS'). The countries will be skipped if they are in this list. If omitted, include all available.")
-    ap.add_argument("--exclude-cities", type=bool, default=True, help="Exclude cities from GeoJSO, defaults to true ")
+    ap.add_argument("--exclude-cities", type=bool, default=False, help="Exclude cities from GeoJSO, defaults to true ")
+    ap.add_argument("--exclude-countries", type=bool, default=False, help="Exclude countries and states from GeoJSO, defaults to true ")
     args = ap.parse_args()
 
     pop_path = Path(args.input_data_path) / "ne_10m_populated_places_simple.zip"
     admin0_path = Path(args.input_data_path) / "ne_10m_admin_0_countries.zip"
     admin1_path = Path(args.input_data_path) / "ne_10m_admin_1_states_provinces.zip"
-
-    countries = load_countries(admin0_path)
-
     iso_filter = set([s.strip() for s in args.admin1_iso_a3.split(",")]) if args.admin1_iso_a3 else None
-    states = load_admin1(admin1_path, only_iso_a3=iso_filter)
 
     countryToContinent = {}
-
     features = []
 
-    # Countries
-    for _, row in countries.iterrows():
-        raw_props = {k: row[k] for k in countries.columns if k != "geometry"}
+    if not args.exclude_countries:
+        countries = load_countries(admin0_path)
+        states = load_admin1(admin1_path, only_iso_a3=iso_filter)
 
-        add_country = True
-        iso_a3_value = raw_props["iso_a3"]
-        for v in iso_filter:
-            if v == iso_a3_value:
+        for _, row in countries.iterrows():
+            # Countries
+            raw_props = {k: row[k] for k in countries.columns if k != "geometry"}
+
+            add_country = True
+            iso_a3_value = raw_props["iso_a3"]
+
+            # Fix South Sudan iso a3 value
+            if iso_a3_value == "SDS":
+                iso_a3_value = "SSD"
+                raw_props["iso_a3"] = iso_a3_value
+
+            countryToContinent[iso_a3_value] = raw_props["continent"]
+            for v in iso_filter:
+                if v == iso_a3_value:
+                    add_country = False
+
+            if raw_props["name"] == "Antarctica":
                 add_country = False
-                countryToContinent[v] = raw_props["continent"]
 
-        if raw_props["name"] == "Antarctica":
-            add_country = False
+            if add_country:
+                raw_props["feature_type"] = "country"
+                props = jsonable(raw_props)  # <-- sanitize
+                features.append({
+                    "type": "Feature",
+                    "geometry": mapping(row.geometry),
+                    "properties": props,
+                })
 
-        if add_country:
-            raw_props["feature_type"] = "country"
-            props = jsonable(raw_props)  # <-- sanitize
+        # States and provinces
+        for _, row in states.iterrows():
+            raw_props = {k: row[k] for k in states.columns if k != "geometry"}
+            raw_props["feature_type"] = "admin1"
+            raw_props["continent"] = countryToContinent[raw_props["iso_a3"]]
             features.append({
                 "type": "Feature",
                 "geometry": mapping(row.geometry),
-                "properties": props,
+                "properties": jsonable(raw_props),  # use your existing sanitizer
             })
 
-    # States and provinces
-    for _, row in states.iterrows():
-        raw_props = {k: row[k] for k in states.columns if k != "geometry"}
-        raw_props["feature_type"] = "admin1"
-        raw_props["continent"] = countryToContinent[raw_props["iso_a3"]]
-        features.append({
-            "type": "Feature",
-            "geometry": mapping(row.geometry),
-            "properties": jsonable(raw_props),  # use your existing sanitizer
-        })
+        print(f"Loaded {len(countries)} countries and {len(states)} states.")
 
     # We want to simplify each of the countries, states and provinces. We don't mind
     # the polygons being larger, but we'd like them to have fewer points. This code adds
@@ -589,7 +597,7 @@ def main():
 
     if not args.exclude_cities:
         cities = load_cities(args.pop_threshold, pop_path)
-        print(f"Loaded {len(countries)} countries, {len(states)} states and {len(cities)} cities (pop ≥ {args.pop_threshold}).")
+        print(f"Loaded {len(cities)} cities (pop ≥ {args.pop_threshold}).")
 
         clusters = cluster_cities(
             cities,
@@ -599,12 +607,12 @@ def main():
             max_cities_per_extract=args.max_cities_per_extract,
             proximity_radius_km=args.proximity_radius_km,
         )
-        print(f"Built {len(clusters)} city clusters.")
 
         # City clusters
         for _, row in clusters.iterrows():
             raw_props = {k: row[k] for k in clusters.columns if k != "geometry"}
             raw_props["feature_type"] = "city_cluster"
+            raw_props["continent"] = countryToContinent[raw_props["anchor_iso_a3"]]
             props = jsonable(raw_props)  # <-- sanitize
             simplified_features.append({
                 "type": "Feature",
@@ -612,6 +620,8 @@ def main():
                 "properties": props,
             })
         
+        print(f"Added {len(clusters)} city extracts.")
+
     fc = {"type": "FeatureCollection", "features": simplified_features}
 
     out_path = Path(args.out)

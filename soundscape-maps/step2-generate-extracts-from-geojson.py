@@ -129,13 +129,22 @@ def main():
         # Determine a filename for the extract
         filename = None
         if isinstance(feat.get("properties"), dict):
-            v = feat["properties"].get("name")
-            c = feat["properties"].get("country_name")
             t = feat["properties"].get("feature_type")
             if t == "country":
+                v = feat["properties"].get("name")
                 if v is not None:
                     filename = str(v)
+            elif t == "city_cluster":
+                v = feat["properties"].get("anchor_city")
+                c = feat["properties"].get("anchor_country")
+                if v is not None:
+                    if c is not None:
+                        filename = str(v) + "-" + str(c)
+                    else:
+                        filename = str(v)
             else:
+                v = feat["properties"].get("name")
+                c = feat["properties"].get("country_name")
                 if v is not None:
                     if c is not None:
                         filename = str(v) + "-" + str(c)
