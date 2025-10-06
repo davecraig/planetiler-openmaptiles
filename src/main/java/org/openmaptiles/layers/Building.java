@@ -102,8 +102,10 @@ public class Building implements
     entry("clay", "#9d8b75") // same as mud
   );
   private final boolean mergeZ13Buildings;
+  private final PlanetilerConfig config;
 
   public Building(Translations translations, PlanetilerConfig config, Stats stats) {
+    this.config = config;
     this.mergeZ13Buildings = config.arguments().getBoolean(
       "building_merge_z13",
       "building layer: merge nearby buildings at z13",
@@ -166,8 +168,8 @@ public class Building implements
         .setAttrWithMinzoom(Fields.RENDER_MIN_HEIGHT, renderMinHeight, 14)
         .setAttrWithMinzoom(Fields.COLOUR, color, 14)
         .setAttrWithMinzoom(Fields.HIDE_3D, hide3d, 14)
-        .setAttrWithMinzoom("name", element.name(), 15)
-        .setAttrWithMinzoom("building", element.building(), 15)
+        .setAttrWithMinzoom("name", element.name(), config.maxzoom())
+        .setAttrWithMinzoom("building", element.building(), config.maxzoom())
         .setSortKey(renderHeight);
       if (mergeZ13Buildings) {
         feature

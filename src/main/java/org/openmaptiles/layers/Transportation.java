@@ -553,7 +553,7 @@ public class Transportation implements
         .setAttr("tactile_paving", element.source().getTag("tactile_paving"))
         .setAttr("traffic_signals:sound", element.source().getTag("traffic_signals:sound"))
         .setSortKeyDescending(element.zOrder())
-        .setMinZoom(15);
+        .setMinZoom(config.maxzoom());
     }
   }
 

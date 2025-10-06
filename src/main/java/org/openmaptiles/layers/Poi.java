@@ -323,7 +323,7 @@ public class Poi implements
       poiClass = element.mappingKey();
       subclass = element.entrance();
       //	LOGGER.info(" {} {}", poiClass, subclass);
-      minzoom = 15;
+      minzoom = config.maxzoom();
     }
 
     output.setBufferPixels(BUFFER_SIZE)
