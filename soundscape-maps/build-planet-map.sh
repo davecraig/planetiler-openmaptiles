@@ -53,5 +53,5 @@ fi
 
 if [ $build_map == 1 ]; then
     printf "Building new map\n"
-    java -Xmx30g -jar ../target/planetiler-openmaptiles-3.15.1-SNAPSHOT-with-deps.jar --download --force --area=planet --fetch-wikidata --tmpdir=$tmp_dir/tmp --output=$output_dir/map-to-serve/test.pmtiles --maxzoom=15 --render_maxzoom=15 --simplify-tolerance-at-max-zoom=-1 --nodemap-type=array --storage=mmap --min_feature_size_at_max_zoom=0 --languages=
+    java -Xmx30g -jar ../target/planetiler-openmaptiles-3.15.1-SNAPSHOT-with-deps.jar --download --force --area=planet --fetch-wikidata --tmpdir=$tmp_dir/tmp --output=$output_dir/map-to-serve/test.pmtiles --maxzoom=14 --render_maxzoom=14 --simplify-tolerance-at-max-zoom=-1 --nodemap-type=array --storage=mmap --min_feature_size_at_max_zoom=0 --languages=
 fi
