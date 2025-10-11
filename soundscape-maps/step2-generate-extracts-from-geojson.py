@@ -88,7 +88,7 @@ def run_extract_region(
 
 def main():
     ap = argparse.ArgumentParser(description="Extract per-feature PMTiles using --region and write sizes back to a new GeoJSON.")
-    ap.add_argument("--input-tiles", default="/mnt/sdb/map-to-serve/test.pmtiles", help="Source .pmtiles file to extract from (must be clustered).")
+    ap.add_argument("--input-tiles", default="/mnt/sdb/map-to-serve/world.pmtiles", help="Source .pmtiles file to extract from (must be clustered).")
     ap.add_argument("--geojson", default="world_countries_and_city_groups.geojson", help="GeoJSON FeatureCollection with polygon features.")
     ap.add_argument("--outdir", default="/mnt/sdb/map-to-serve/extracts", help="Directory to write extracts.")
     ap.add_argument("--output-geojson", default="manifest.geojson", help="Path to write augmented GeoJSON.")
@@ -130,21 +130,12 @@ def main():
         filename = None
         if isinstance(feat.get("properties"), dict):
             t = feat["properties"].get("feature_type")
+            v = feat["properties"].get("name")
             if t == "country":
-                v = feat["properties"].get("name")
                 if v is not None:
                     filename = str(v)
-            elif t == "city_cluster":
-                v = feat["properties"].get("anchor_city")
-                c = feat["properties"].get("anchor_country")
-                if v is not None:
-                    if c is not None:
-                        filename = str(v) + "-" + str(c)
-                    else:
-                        filename = str(v)
             else:
-                v = feat["properties"].get("name")
-                c = feat["properties"].get("country_name")
+                c = feat["properties"].get("iso_a2")
                 if v is not None:
                     if c is not None:
                         filename = str(v) + "-" + str(c)

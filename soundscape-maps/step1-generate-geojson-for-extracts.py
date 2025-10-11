@@ -30,9 +30,227 @@ from shapely import make_valid  #
 from sklearn.cluster import DBSCAN
 from tqdm import tqdm
 import pandas as pd
-import numpy as np
 from datetime import datetime, date
 import antimeridian
+import unicodedata
+
+import csv
+import pandas as pd
+import numpy as np
+from collections import defaultdict
+
+def load_country_languages(countryinfo_path: str) -> dict[str, list[str]]:
+    """
+    Parse GeoNames countryInfo.txt, returning { ISO_A2 -> [lang1, lang2, ...] } in priority order.
+    Uses the 'Languages' column (comma-separated, first is primary).
+    """
+    if not countryinfo_path:
+        return {}
+
+    # Read robustly with DictReader (handles header/no-header variants)
+    langs_by_cc = {}
+
+    with open(countryinfo_path, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+
+    # Separate comment lines and data lines
+    comment_lines = [line for line in lines if line.strip().startswith('#')]
+    data_lines = [line for line in lines if not line.strip().startswith('#') and line.strip()]
+
+    # Use the last comment line (minus '#') as header
+    header_line = comment_lines[-1].lstrip('#').strip() + '\n'
+    # Combine the cleaned header with data lines
+    cleaned_lines = [header_line] + data_lines
+
+    # Pass the cleaned lines to DictReader
+    csv.register_dialect('countryinfo', delimiter='\t', quoting=csv.QUOTE_NONE)
+    reader = csv.DictReader(cleaned_lines, dialect="countryinfo")
+    for row in reader:
+        cc = row.get("ISO", "") or row.get("CountryCode", "")
+        langs = row.get("Languages", "") or row.get("languages", "")
+        if cc:
+            langs_by_cc[cc.upper()] = [l for l in langs.split(",") if l]
+    return langs_by_cc
+
+def load_iso_a2_to_geoname_id(countryinfo_path: str) -> dict[str, int]:
+    """
+    Parse GeoNames countryInfo.txt, returning { ISO_A2 -> [lang1, lang2, ...] } in priority order.
+    Uses the 'Languages' column (comma-separated, first is primary).
+    """
+    if not countryinfo_path:
+        return {}
+    langs_by_cc = {}
+
+    # Read robustly with DictReader (handles header/no-header variants)
+    results = {}
+
+    with open(countryinfo_path, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+
+    # Separate comment lines and data lines
+    comment_lines = [line for line in lines if line.strip().startswith('#')]
+    data_lines = [line for line in lines if not line.strip().startswith('#') and line.strip()]
+
+    # Use the last comment line (minus '#') as header
+    header_line = comment_lines[-1].lstrip('#').strip() + '\n'
+    # Combine the cleaned header with data lines
+    cleaned_lines = [header_line] + data_lines
+
+    # Pass the cleaned lines to DictReader
+    csv.register_dialect('countryinfo', delimiter='\t', quoting=csv.QUOTE_NONE)
+    reader = csv.DictReader(cleaned_lines, dialect="countryinfo")
+    for row in reader:
+        cc = row.get("ISO", "") or row.get("CountryCode", "")
+        geoname_id = int(row.get("geonameid", ""))
+        results[cc.upper()] = geoname_id
+    return results
+
+def load_iso_a3_to_iso_a2(countryinfo_path: str) -> dict[str, int]:
+    if not countryinfo_path:
+        return {}
+    langs_by_cc = {}
+
+    # Read robustly with DictReader (handles header/no-header variants)
+    results = {}
+
+    with open(countryinfo_path, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+
+    # Separate comment lines and data lines
+    comment_lines = [line for line in lines if line.strip().startswith('#')]
+    data_lines = [line for line in lines if not line.strip().startswith('#') and line.strip()]
+
+    # Use the last comment line (minus '#') as header
+    header_line = comment_lines[-1].lstrip('#').strip() + '\n'
+    # Combine the cleaned header with data lines
+    cleaned_lines = [header_line] + data_lines
+
+    # Pass the cleaned lines to DictReader
+    csv.register_dialect('countryinfo', delimiter='\t', quoting=csv.QUOTE_NONE)
+    reader = csv.DictReader(cleaned_lines, dialect="countryinfo")
+    for row in reader:
+        iso2 = row.get("ISO", "")
+        iso3 = row.get("ISO3", "")
+        results[iso3] = iso2
+
+    return results
+
+def load_alternate_names(altnames_path: str,
+                         wanted_langs: set[str] | None = None) -> dict[int, dict[str, list[dict]]]:
+    """
+    Read GeoNames alternateNamesV2.txt and build:
+        { geonameid: { lang_code: [ {name, pref, short, colloquial, historic} , ... ] } }
+    If wanted_langs is provided, we keep only those languages + 'en'.
+    """
+    if not altnames_path:
+        return {}
+    idx: dict[int, dict[str, list[dict]]] = defaultdict(lambda: defaultdict(list))
+
+    if altnames_path.suffix.lower() == ".zip":
+        # Extract to a temp dir unique per zip
+        tmp_root = Path(tempfile.mkdtemp(prefix="ne_unzip_"))
+        with zipfile.ZipFile(altnames_path, "r") as zf:
+            zf.extractall(tmp_root)
+        altnames_path = tmp_root / "alternateNamesV2.txt"
+
+    # Columns per GeoNames docs (alternateNamesV2):
+    # 0 alternateNameId, 1 geonameid, 2 isolanguage, 3 alternateName, 4 isPreferredName,
+    # 5 isShortName, 6 isColloquial, 7 isHistoric, 8 from, 9 to
+    with open(altnames_path, "r", encoding="utf-8") as f:
+        for line in f:
+            if not line or line.startswith("#"):
+                continue
+            parts = line.rstrip("\n").split("\t")
+            if len(parts) < 4:
+                continue
+            try:
+                geonameid = int(parts[1])
+            except ValueError:
+                continue
+            lang = parts[2] or ""
+            name = parts[3]
+            if not name:
+                continue
+            rec = {
+                "name": name,
+                "pref": (len(parts) > 4 and parts[4] == "1"),
+                "short": (len(parts) > 5 and parts[5] == "1"),
+                "colloq": (len(parts) > 6 and parts[6] == "1"),
+                "hist": (len(parts) > 7 and parts[7] == "1"),
+            }
+            if wanted_langs and (lang not in wanted_langs) and (lang != "en") and not rec["pref"]:
+                continue
+            idx[geonameid][lang].append(rec)
+    return idx
+
+def pick_from_lang_bucket(bucket: list[dict]) -> str | None:
+    """
+    Choose the best name from a language bucket:
+    prefer preferred > not historic > not colloquial > not short; fall back to first.
+    """
+    if not bucket:
+        return None
+    # strict preference chain
+    candidates = sorted(
+        bucket,
+        key=lambda r: (
+            not r["pref"],   # prefer pref==True
+            r["hist"],       # avoid historic
+            r["colloq"],     # avoid colloquial
+            r["short"],      # avoid short forms
+        )
+    )
+    return candidates[0]["name"]
+
+def choose_en_and_local(geonameid: int,
+                        default_name: str,
+                        lang_index: dict[int, dict[str, list[dict]]],
+                        country_iso2: str | None,
+                        country_langs_by_iso2: dict[str, list[str]]) -> tuple[str | None, str | None]:
+    """
+    For a given geonameid, select (English, Local) using GeoNames alt names:
+      - English: 'en'
+      - Local: try country primary languages from l
+    """
+    langs = lang_index.get(int(geonameid), {})
+    # English
+    en = pick_from_lang_bucket(langs.get("en", []))
+    if en == None:
+        en = default_name
+
+    # Local, start with empty
+    local = None
+
+    # Try official languages first
+    if local is None and country_iso2 and country_iso2.upper() in country_langs_by_iso2:
+        for l in country_langs_by_iso2[country_iso2.upper()]:
+            # Try complete iso2 with extension e.g. es-BO, zh-CN
+            nm = pick_from_lang_bucket(langs.get(l, []))
+            if nm:
+                local = nm
+                break
+            # Try just the initial iso2
+            nm = pick_from_lang_bucket(langs.get(l.split("-")[0], []))
+            if nm:
+                local = nm
+                break
+
+            # If the language is English fallback to the default
+            if (l.split("-")[0] == "en") & (en != None):
+                local = en
+                break
+
+    # Next try "" as language
+    if local is None and "" in langs:
+        nm = pick_from_lang_bucket(langs.get("", []))
+        if nm:
+            local = nm
+
+    # Otherwise use the default
+    if local is None:
+        local = default_name
+
+    return en, local
 
 def jsonable(x):
     """Recursively convert pandas/NumPy objects into plain Python JSON-serializable types."""
@@ -79,33 +297,6 @@ def jsonable(x):
 
     # Fallback
     return str(x)
-
-def pick_first_nonnull(df, candidates, default):
-    """
-    Return a Series with the first non-null across the columns in `candidates`.
-    Falls back to `default` if none of the columns exist or all values are null.
-    """
-    existing = [c for c in candidates if c in df.columns]
-    if existing:
-        s = df[existing].bfill(axis=1).iloc[:, 0]
-        return s.fillna(default)
-    else:
-        return pd.Series([default] * len(df), index=df.index)
-
-from shapely.ops import transform
-from shapely.geometry import Point, MultiPoint
-from pyproj import Transformer, CRS
-
-def _lonlat_to_local_transformer(lon, lat):
-    """
-    Build a local azimuthal-equidistant CRS centered on (lon, lat) and
-    return forward/backward transformers between WGS84 <-> local meters.
-    """
-    aeqd = CRS.from_proj4(f"+proj=aeqd +lat_0={lat} +lon_0={lon} +datum=WGS84 +units=m +no_defs")
-    wgs84 = CRS.from_epsg(4326)
-    fwd = Transformer.from_crs(wgs84, aeqd, always_xy=True).transform     # lon/lat -> meters
-    inv = Transformer.from_crs(aeqd, wgs84, always_xy=True).transform     # meters -> lon/lat
-    return fwd, inv
 
 from shapely.ops import transform
 from shapely.geometry import MultiPoint
@@ -175,55 +366,69 @@ def resolve_shp_path(input_path: Path) -> Path:
 
     raise ValueError(f"Unsupported path type: {input_path}")
 
-
 def load_cities(pop_threshold: int, pop_path: Path) -> gpd.GeoDataFrame:
-    shp_path = resolve_shp_path(pop_path)
-    gdf = gpd.read_file(shp_path).to_crs(epsg=4326)
 
-    # Try common population field names
-    pop_field = None
-    for cand in ["POP_MAX", "pop_max", "POP_MIN", "pop_min", "POP_OTHER"]:
-        if cand in gdf.columns:
-            pop_field = cand
-            break
-    if pop_field is None:
-        raise RuntimeError(
-            f"Could not find a population field in {shp_path.name}. "
-            "Expected something like POP_MAX."
-        )
+    if pop_path.suffix.lower() == ".zip":
+        # Extract to a temp dir unique per zip
+        tmp_root = Path(tempfile.mkdtemp(prefix="all_countries_"))
+        with zipfile.ZipFile(pop_path, "r") as zf:
+            zf.extractall(tmp_root)
+        pop_path = tmp_root / "allCountries.txt"
 
-    gdf = gdf[gdf[pop_field].fillna(0) >= pop_threshold].copy()
+    # Columns from https://download.geonames.org/export/dump/readme.txt:
+    #    geonameid         : integer id of record in geonames database
+    #    name              : name of geographical point (utf8) varchar(200)
+    #    asciiname         : name of geographical point in plain ascii characters, varchar(200)
+    #    alternatenames    : alternatenames, comma separated, ascii names automatically transliterated, convenience attribute from alternatename table, varchar(10000)
+    #    latitude          : latitude in decimal degrees (wgs84)
+    #    longitude         : longitude in decimal degrees (wgs84)
+    #    feature class     : see http://www.geonames.org/export/codes.html, char(1)
+    #    feature code      : see http://www.geonames.org/export/codes.html, varchar(10)
+    #    country code      : ISO-3166 2-letter country code, 2 characters
+    #    cc2               : alternate country codes, comma separated, ISO-3166 2-letter country code, 200 characters
+    #    admin1 code       : fipscode (subject to change to iso code), see exceptions below, see file admin1Codes.txt for display names of this code; varchar(20)
+    #    admin2 code       : code for the second administrative division, a county in the US, see file admin2Codes.txt; varchar(80)
+    #    admin3 code       : code for third level administrative division, varchar(20)
+    #    admin4 code       : code for fourth level administrative division, varchar(20)
+    #    population        : bigint (8 byte int)
+    #    elevation         : in meters, integer
+    #    dem               : digital elevation model, srtm3 or gtopo30, average elevation of 3''x3'' (ca 90mx90m) or 30''x30'' (ca 900mx900m) area in meters, integer. srtm processed by cgiar/ciat.
+    #    timezone          : the iana timezone id (see file timeZone.txt) varchar(40)
+    #    modification date : date of last modification in yyyy-MM-dd format
 
-    # Keep tidy columns (presence-checked)
-    keep = [c for c in ["name", "name_ascii", "country_name", "adm0name", "adm0_a3", pop_field] if c in gdf.columns]
-    gdf = gdf[keep + ["geometry"]]
+    df = pd.read_csv(pop_path,
+                     engine="pyarrow",
+                     sep='\t',
+                     names=["geonameid", "name", "asciiname", "alternatenames","latitude", "longitude", "feature_class", "feature_code", "iso_a2", "cc2", "admin1", "admin2", "admin3", "admin4", "population", "elevation", "dem", "timezone", "modification"])
 
-    # Normalize
-    gdf = gdf.rename(columns={
-        "NAME": "name",
-        "NAMEASCII": "name_ascii",
-        "ADM0NAME": "country_name",
-        "ADM0_A3": "iso_a3",
-        pop_field: "pop_max",
-    })
-    gdf.reset_index(drop=True, inplace=True)
-    return gdf
+    df = df[(df["feature_class"] == 'P') & (df["population"].fillna(0) >= pop_threshold)].copy()
+
+    gdf = gpd.GeoDataFrame({
+        "geonameid": df["geonameid"],
+        "name": df["name"],
+        "latitude": df["latitude"],
+        "longitude": df["longitude"],
+        "feature_class": df["feature_class"],
+        "feature_code": df["feature_code"],
+        "iso_a2": df["iso_a2"],
+        "admin1": df["admin1"],
+        "population": df["population"],
+        "geometry": gpd.points_from_xy(df['longitude'], df['latitude'])
+    }, crs="EPSG:4326")
+
+    return gdf.sort_values(by='population', ascending=False)
 
 
 def load_countries(admin0_path: Path) -> gpd.GeoDataFrame:
     shp_path = resolve_shp_path(admin0_path)
-    gdf = gpd.read_file(shp_path).to_crs(epsg=4326)
+    gdf = gpd.read_file(shp_path, use_arrow = True).to_crs(epsg=4326)
 
     # Normalize column names across NE variants
     rename_map = {
         "NAME": "name",
         "ADMIN": "name_admin",
-        "SOVEREIGNT": "sovereignty",
-        "ISO_A3": "iso_a3_admin0",
-        "WB_A2": "wb_a2",
-        "CONTINENT": "continent",
-        "SUBREGION": "subregion",
-        "POP_EST": "pop_est",
+        "ISO_A2": "iso_a2_admin0",
+        "CONTINENT": "continent"
     }
     rename_map = {k: v for k, v in rename_map.items() if k in gdf.columns}
     gdf = gdf.rename(columns=rename_map)
@@ -237,15 +442,16 @@ def load_countries(admin0_path: Path) -> gpd.GeoDataFrame:
         else:
             gdf["name"] = "Unknown"
 
-    if "iso_a3" not in gdf.columns:
-        for cand in ["ADM0_A3", "ISO_A3"]:
+    if "iso_a2" not in gdf.columns:
+        for cand in ["ISO_A2", "iso_a2", "WB_A2", "wb_a2", "ISO2", "iso2"]:
             if cand in gdf.columns:
-                gdf["iso_a3"] = gdf[cand]
+                gdf["iso_a2"] = gdf[cand]
                 break
         else:
-            gdf["iso_a3"] = None
+            gdf["iso_a2"] = None
 
-    keep = [c for c in ["name", "iso_a3", "sovereignty", "continent", "subregion", "pop_est"] if c in gdf.columns]
+
+    keep = [c for c in ["name", "iso_a2", "continent"] if c in gdf.columns]
     gdf = gdf[keep + ["geometry"]].copy()
     gdf.reset_index(drop=True, inplace=True)
     return gdf
@@ -256,39 +462,31 @@ def _first_col(gdf, choices):
             return c
     return None
 
-def load_admin1(admin1_path: Path, only_iso_a3: set[str] | None = None) -> gpd.GeoDataFrame:
+def load_admin1(admin1_path: Path) -> gpd.GeoDataFrame:
     """
     Load Natural Earth admin-1 states/provinces (10m recommended).
-    Returns columns: admin1_name, admin1_type, iso_3166_2, hasc, country_name, iso_a3, geometry.
+    Returns columns: admin1_name, iso_3166_2, hasc, country_name, iso_a3, geometry.
     Dissolves duplicate rows for the same unit id when possible.
     """
     shp = resolve_shp_path(admin1_path)
-    gdf = gpd.read_file(shp).to_crs(epsg=4326)
+    gdf = gpd.read_file(shp, use_arrow = True).to_crs(epsg=4326)
 
     # Map common NE fields -> unified names
     name_col       = _first_col(gdf, ["name_en", "name", "NAME_EN", "NAME"])
-    type_col       = _first_col(gdf, ["type_en", "type", "TYPE_EN", "TYPE"])
-    iso2_col       = _first_col(gdf, ["iso_3166_2", "ISO_3166_2"])
-    hasc_col       = _first_col(gdf, ["hasc", "HASC", "code_hasc", "CODE_HASC"])
     adm0_iso_col   = _first_col(gdf, ["adm0_a3", "ADM0_A3", "iso_a3", "ISO_A3"])
     country_col    = _first_col(gdf, ["admin", "ADMIN", "adm0_name", "ADM0NAME"])
     unit_id_col    = _first_col(gdf, ["adm1_code", "ADM1_CODE", "iso_3166_2", "HASC", "hasc"])
+    geonameid_col  = _first_col(gdf, ["gn_id"])
 
     # Build a tidy frame with unified columns
     tidy = gpd.GeoDataFrame({
         "name": gdf[name_col] if name_col else "Unknown",
-        "admin1_type": gdf[type_col] if type_col else None,
-        "iso_3166_2": gdf[iso2_col] if iso2_col else None,
-        "hasc": gdf[hasc_col] if hasc_col else None,
         "country_name": gdf[country_col] if country_col else None,
         "iso_a3": gdf[adm0_iso_col] if adm0_iso_col else None,
         "_unit_id": gdf[unit_id_col] if unit_id_col else None,
-        "geometry": gdf.geometry
+        "geometry": gdf.geometry,
+        "geonameid": gdf[geonameid_col] if geonameid_col else None
     }, crs="EPSG:4326")
-
-    # Optional country filter
-    if only_iso_a3:
-        tidy = tidy[tidy["iso_a3"].isin(only_iso_a3)].copy()
 
     # Dissolve duplicates for same admin-1 unit (if we have an id to group by)
     if "_unit_id" in tidy.columns and tidy["_unit_id"].notna().any():
@@ -304,22 +502,6 @@ def load_admin1(admin1_path: Path, only_iso_a3: set[str] | None = None) -> gpd.G
     tidy.drop(columns=["_unit_id"], errors="ignore", inplace=True)
     tidy.reset_index(drop=True, inplace=True)
     return tidy
-
-def _to_single_geometry(geojson_obj):
-    """Accepts Geometry, Feature, or FeatureCollection and returns a single Shapely geometry and properties."""
-    if geojson_obj.get("type") == "Feature":
-        geom = shape(geojson_obj["geometry"])
-        props = copy.deepcopy(geojson_obj.get("properties", {}))
-        return geom, props
-    elif geojson_obj.get("type") in ("Polygon", "MultiPolygon", "GeometryCollection", "MultiLineString", "MultiPoint", "LineString", "Point"):
-        return shape(geojson_obj), {}
-    elif geojson_obj.get("type") == "FeatureCollection":
-        geoms = [shape(f["geometry"]) for f in geojson_obj.get("features", []) if f.get("geometry")]
-        if not geoms:
-            raise ValueError("Empty FeatureCollection")
-        return unary_union(geoms), {}
-    else:
-        raise ValueError("Unsupported GeoJSON object type")
 
 def simplify_superset(geojson_obj, tol=500, buf=500):
     """
@@ -400,10 +582,8 @@ def cluster_cities(
             return pd.Series([default] * len(df), index=df.index)
 
     def as_pop_series(df):
-        if "pop_max" in df.columns:
-            return pd.to_numeric(df["pop_max"], errors="coerce").fillna(0)
         return pd.to_numeric(
-            pick_first_nonnull(df, ["POP_MAX", "POP_MIN", "pop_max", "pop_min", "POP_EST", "pop_est"], 0),
+            pick_first_nonnull(df, ["population"], 0),
             errors="coerce"
         ).fillna(0)
 
@@ -473,29 +653,20 @@ def cluster_cities(
             )
 
             # Aggregate props (selected set)
-            names_sel = pick_first_nonnull(used, ["name", "NAME", "name_ascii", "NAMEASCII", "Name"], "Unknown")
-            countries_sel = pick_first_nonnull(used, ["country_name", "adm0name", "SOVEREIGNT", "ADMIN"], "Unknown")
-            iso_sel = pick_first_nonnull(used, ["iso_a3", "adm0_a3"], "")
+            names_sel = pick_first_nonnull(used, ["name"], "Unknown")
+            geonameids_sel = pick_first_nonnull(used, ["geonameid"], "")
 
             # Anchor props
-            anchor_name = pick_first_nonnull(block.loc[[anchor_idx]], ["name", "NAME", "name_ascii", "NAMEASCII", "Name"], "Unknown").iloc[0]
-            anchor_country = pick_first_nonnull(block.loc[[anchor_idx]], ["country_name", "adm0name", "SOVEREIGNT", "ADMIN"], "Unknown").iloc[0]
-            anchor_iso = pick_first_nonnull(block.loc[[anchor_idx]], ["iso_a3", "adm0_a3"], "").iloc[0]
+            anchor_name = pick_first_nonnull(block.loc[[anchor_idx]], ["name"], "Unknown").iloc[0]
+            anchor_iso = pick_first_nonnull(block.loc[[anchor_idx]], ["iso_a2"], "").iloc[0]
+            anchor_geonameid = pick_first_nonnull(block.loc[[anchor_idx]], ["geonameid"], "").iloc[0]
 
             total_pop_used = int(used["_pop"].sum())
             records.append({
-                "dbscan_cluster_id": int(cid),
-                "anchor_city": str(anchor_name),
-                "anchor_country": str(anchor_country),
-                "anchor_iso_a3": str(anchor_iso),
-                "anchor_pop_max": int(float(anchor["_pop"])),
-                "anchor_lon": a_lon,
-                "anchor_lat": a_lat,
-                "city_count": int(len(used)),
-                "city_names": sorted({str(v) for v in names_sel.dropna().tolist()}),
-                "countries": sorted({str(v) for v in countries_sel.dropna().tolist()}),
-                "iso_a3s": sorted({str(v) for v in iso_sel.dropna().tolist()}),
-                "total_pop_max": total_pop_used,
+                "name": str(anchor_name),
+                "iso_a2": str(anchor_iso),
+                "anchor_geonameid": str(anchor_geonameid),
+                "city_geonameids": { int(v) for v in geonameids_sel.dropna().tolist() },
                 "geometry": poly,
             })
 
@@ -503,11 +674,6 @@ def cluster_cities(
             unassigned -= set(used.index)
 
     return gpd.GeoDataFrame(records, geometry="geometry", crs="EPSG:4326")
-
-
-def build_feature(geometry, properties: dict) -> dict:
-    return {"type": "Feature", "geometry": mapping(geometry), "properties": properties}
-
 
 def crosses_dateline(geom):
     minx, miny, maxx, maxy = geom.bounds
@@ -527,38 +693,55 @@ def main():
     ap.add_argument("--buffer-km", type=float, default=50.0, help="Border distance around city clusters")
     ap.add_argument("--proximity-radius-km", type=float, default=80.0, help="Optional: include only cities within this radius of the anchor (largest city). Applied before --max-cities-per-cluster.")
     ap.add_argument("--max-cities-per-extract", type=int, default=20, help="Per-extract cap (anchor + nearest neighbors). If omitted, includes all neighbors.")
-    ap.add_argument("--admin1-iso-a3", default="USA,CAN,CHN,JPN,IND,RUS,DEU,POL,BRA,AUS", help="Optional comma-separated ISO A3 list to include (e.g. 'USA,CAN,AUS'). The countries will be skipped if they are in this list. If omitted, include all available.")
+    ap.add_argument("--admin1-iso-a2", default="US,CA,CN,JP,IN,RU,DE,PL,BR,AU", help="Optional comma-separated ISO A2 list to include (e.g. 'USA,CAN,AUS'). The countries will be skipped if they are in this list. If omitted, include all available.")
     ap.add_argument("--exclude-cities", type=bool, default=False, help="Exclude cities from GeoJSO, defaults to true ")
     ap.add_argument("--exclude-countries", type=bool, default=False, help="Exclude countries and states from GeoJSO, defaults to true ")
     args = ap.parse_args()
 
-    pop_path = Path(args.input_data_path) / "ne_10m_populated_places_simple.zip"
+    pop_path = Path(args.input_data_path) / "allCountries.zip"
     admin0_path = Path(args.input_data_path) / "ne_10m_admin_0_countries.zip"
     admin1_path = Path(args.input_data_path) / "ne_10m_admin_1_states_provinces.zip"
-    iso_filter = set([s.strip() for s in args.admin1_iso_a3.split(",")]) if args.admin1_iso_a3 else None
+    countryinfo_path = Path(args.input_data_path) / "countryInfo.txt"
+    geonames_altnames_path = Path(args.input_data_path) / "alternateNamesV2.zip"
+    iso_filter = set([s.strip() for s in args.admin1_iso_a2.split(",")]) if args.admin1_iso_a2 else None
 
     countryToContinent = {}
     features = []
 
-    if not args.exclude_countries:
-        countries = load_countries(admin0_path)
-        states = load_admin1(admin1_path, only_iso_a3=iso_filter)
+    # Build language resources
+    print("Loading country info")
+    iso_a2_to_geoname_id = load_iso_a2_to_geoname_id(countryinfo_path)
+    iso_a3_to_iso_a2 = load_iso_a3_to_iso_a2(countryinfo_path)
+    country_langs = load_country_languages(countryinfo_path)
+    print("Loading alternate names")
+    alt_idx = load_alternate_names(geonames_altnames_path)
 
+    if not args.exclude_countries:
+        print("Loading countries")
+        countries = load_countries(admin0_path)
+        print("Loading states")
+        states = load_admin1(admin1_path)
+
+        print("Processing countries")
         for _, row in countries.iterrows():
             # Countries
             raw_props = {k: row[k] for k in countries.columns if k != "geometry"}
 
             add_country = True
-            iso_a3_value = raw_props["iso_a3"]
 
-            # Fix South Sudan iso a3 value
-            if iso_a3_value == "SDS":
-                iso_a3_value = "SSD"
-                raw_props["iso_a3"] = iso_a3_value
+            # Determine country ISO2 needed for language selection
+            iso2 = raw_props["iso_a2"]
 
-            countryToContinent[iso_a3_value] = raw_props["continent"]
+            # Find a GeoNames ID to use for the lookup
+            gn = iso_a2_to_geoname_id.get(iso2)
+            if gn != None:
+                name_en, name_local = (None, None)
+                if gn is not None and alt_idx:
+                    name_en, name_local = choose_en_and_local(gn, row.get("name"), alt_idx, iso2, country_langs)
+
+            countryToContinent[iso2] = raw_props["continent"]
             for v in iso_filter:
-                if v == iso_a3_value:
+                if v == iso2:
                     add_country = False
 
             if raw_props["name"] == "Antarctica":
@@ -566,7 +749,12 @@ def main():
 
             if add_country:
                 raw_props["feature_type"] = "country"
-                props = jsonable(raw_props)  # <-- sanitize
+                if name_en:
+                    raw_props["name"] = name_en
+                if name_local:
+                    if name_local != raw_props["name"]:
+                        raw_props["name_local"] = name_local
+                props = jsonable(raw_props)
                 features.append({
                     "type": "Feature",
                     "geometry": mapping(row.geometry),
@@ -574,31 +762,65 @@ def main():
                 })
 
         # States and provinces
+        print("Processing states")
         for _, row in states.iterrows():
-            raw_props = {k: row[k] for k in states.columns if k != "geometry"}
+            iso3 = row.get("iso_a3")
+            iso2 = iso_a3_to_iso_a2.get(iso3)
+            if iso_filter != None:
+                if iso2 not in iso_filter:
+                    continue
+
+            gn = int(row.get("geonameid"))
+
+            name_en, name_local = (None, None)
+            if gn is not None and alt_idx:
+                name_en, name_local = choose_en_and_local(gn, row.get("name"), alt_idx, iso2, country_langs)
+
+            raw_props = {
+                k: row[k] for k in states.columns
+                if (k != "geometry") &
+                   (k != "geonameid") &
+                   (k != "iso_a3")
+            }
             raw_props["feature_type"] = "admin1"
-            raw_props["continent"] = countryToContinent[raw_props["iso_a3"]]
+            raw_props["iso_a2"] = iso2
+
+            if name_en: raw_props["name"] = name_en
+            if name_local:
+                if name_local != raw_props["name"]:
+                    raw_props["name_local"] = name_local
             features.append({
                 "type": "Feature",
                 "geometry": mapping(row.geometry),
                 "properties": jsonable(raw_props),  # use your existing sanitizer
             })
 
-        print(f"Loaded {len(countries)} countries and {len(states)} states.")
+        print(f"Loaded total of {len(features)} countries and states.")
 
     # We want to simplify each of the countries, states and provinces. We don't mind
     # the polygons being larger, but we'd like them to have fewer points. This code adds
     # a buffer region of 100km round the edge and simplifies the polygon. This reduces
     # the size of the output GeoJSON greatly.
+    print(f"Simplifying country and state outlines")
     simplified_features = [
         simplify_superset(f, tol=10000, buf=100000) 
         for f in features
     ]
 
     if not args.exclude_cities:
-        cities = load_cities(args.pop_threshold, pop_path)
+        print("Loading cities")
+        id_to_fallback_name = {}
+        cities = load_cities(
+            args.pop_threshold,
+            pop_path)
+
+        print("Map geonames to names")
+        for _, city in cities.iterrows():
+            id_to_fallback_name[int(city.get("geonameid"))] = city.get("name")
+
         print(f"Loaded {len(cities)} cities (pop ≥ {args.pop_threshold}).")
 
+        print("Clustering cities")
         clusters = cluster_cities(
             cities,
             eps_km=args.eps_km,
@@ -609,11 +831,49 @@ def main():
         )
 
         # City clusters
+        print("Processing clusters")
         for _, row in clusters.iterrows():
-            raw_props = {k: row[k] for k in clusters.columns if k != "geometry"}
+            raw_props = {
+                k: row[k] for k in clusters.columns
+                if (k != "geometry") &
+                   (k != "anchor_geonameid") &
+                   (k != "city_geonameids") &
+                   (k != "city_names")}
+
+            iso2 = raw_props["iso_a2"]
+            gn = int(row.get("anchor_geonameid"))
+            name_en, name_local = (None, None)
+            if gn is not None and alt_idx:
+                name_en, name_local = choose_en_and_local(gn, row.get("name"), alt_idx, iso2, country_langs)
             raw_props["feature_type"] = "city_cluster"
-            raw_props["continent"] = countryToContinent[raw_props["anchor_iso_a3"]]
-            props = jsonable(raw_props)  # <-- sanitize
+            if name_en: raw_props["name"] = name_en
+            if name_local:
+                if name_local != raw_props["name"]:
+                    raw_props["name_local"] = name_local
+
+            city_names = []
+            city_local_names = []
+            for gn in row.get("city_geonameids"):
+                name = id_to_fallback_name[gn]
+                if gn is not None and alt_idx:
+                    name_en, name_local = choose_en_and_local(gn, name, alt_idx, iso2, country_langs)
+                    if name_en != None:
+                        city_names.append(name_en)
+                    else:
+                        city_names.append(name)
+                    if name_local != None:
+                        city_local_names.append(name_local)
+                    else:
+                        city_local_names.append(name)
+                else:
+                    city_names.append(name)
+                    city_local_names.append(name)
+
+            raw_props["city_names"] = city_names
+            if city_names != city_local_names:
+                raw_props["city_local_names"] = city_local_names
+
+            props = jsonable(raw_props)
             simplified_features.append({
                 "type": "Feature",
                 "geometry": mapping(row.geometry),
@@ -631,5 +891,5 @@ def main():
 
 if __name__ == "__main__":
     # Dependencies:
-    #   pip install geopandas shapely pyproj scikit-learn tqdm antimeridian
+    #   pip install geopandas shapely pyproj scikit-learn tqdm antimeridian pyarrow
     main()
