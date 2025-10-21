@@ -366,7 +366,7 @@ def resolve_shp_path(input_path: Path) -> Path:
 
     raise ValueError(f"Unsupported path type: {input_path}")
 
-def load_cities(pop_threshold: int, pop_path: Path) -> gpd.GeoDataFrame:
+def load_cities(pop_threshold: int, pop_path: Path, no_cities_iso2_filter: set[any]) -> gpd.GeoDataFrame:
 
     if pop_path.suffix.lower() == ".zip":
         # Extract to a temp dir unique per zip
@@ -415,6 +415,9 @@ def load_cities(pop_threshold: int, pop_path: Path) -> gpd.GeoDataFrame:
         "population": df["population"],
         "geometry": gpd.points_from_xy(df['longitude'], df['latitude'])
     }, crs="EPSG:4326")
+
+    # Remove cities which are in countries that we don't want to include
+    gdf = gdf[~gdf['iso_a2'].isin(no_cities_iso2_filter)]
 
     return gdf.sort_values(by='population', ascending=False)
 
@@ -694,6 +697,7 @@ def main():
     ap.add_argument("--proximity-radius-km", type=float, default=80.0, help="Optional: include only cities within this radius of the anchor (largest city). Applied before --max-cities-per-cluster.")
     ap.add_argument("--max-cities-per-extract", type=int, default=20, help="Per-extract cap (anchor + nearest neighbors). If omitted, includes all neighbors.")
     ap.add_argument("--admin1-iso-a2", default="US,CA,CN,JP,IN,RU,DE,PL,BR,AU", help="Optional comma-separated ISO A2 list to include (e.g. 'USA,CAN,AUS'). The countries will be skipped if they are in this list. If omitted, include all available.")
+    ap.add_argument("--no-cities-iso-a2", default="CN,JP,IN,RU,DE,PL,BR,AU", help="Optional comma-separated ISO A2 list to include (e.g. 'USA,CAN,AUS'). The countries will be skipped if they are in this list. If omitted, include all available.")
     ap.add_argument("--exclude-cities", type=bool, default=False, help="Exclude cities from GeoJSO, defaults to true ")
     ap.add_argument("--exclude-countries", type=bool, default=False, help="Exclude countries and states from GeoJSO, defaults to true ")
     args = ap.parse_args()
@@ -703,7 +707,8 @@ def main():
     admin1_path = Path(args.input_data_path) / "ne_10m_admin_1_states_provinces.zip"
     countryinfo_path = Path(args.input_data_path) / "countryInfo.txt"
     geonames_altnames_path = Path(args.input_data_path) / "alternateNamesV2.zip"
-    iso_filter = set([s.strip() for s in args.admin1_iso_a2.split(",")]) if args.admin1_iso_a2 else None
+    admin1_iso_filter = set([s.strip() for s in args.admin1_iso_a2.split(",")]) if args.admin1_iso_a2 else None
+    no_cities_iso_filter = set([s.strip() for s in args.no_cities_iso_a2.split(",")]) if args.no_cities_iso_a2 else None
 
     countryToContinent = {}
     features = []
@@ -740,7 +745,7 @@ def main():
                     name_en, name_local = choose_en_and_local(gn, row.get("name"), alt_idx, iso2, country_langs)
 
             countryToContinent[iso2] = raw_props["continent"]
-            for v in iso_filter:
+            for v in admin1_iso_filter:
                 if v == iso2:
                     add_country = False
 
@@ -766,8 +771,8 @@ def main():
         for _, row in states.iterrows():
             iso3 = row.get("iso_a3")
             iso2 = iso_a3_to_iso_a2.get(iso3)
-            if iso_filter != None:
-                if iso2 not in iso_filter:
+            if admin1_iso_filter != None:
+                if iso2 not in admin1_iso_filter:
                     continue
 
             gn = int(row.get("geonameid"))
@@ -812,7 +817,9 @@ def main():
         id_to_fallback_name = {}
         cities = load_cities(
             args.pop_threshold,
-            pop_path)
+            pop_path,
+            no_cities_iso_filter
+        )
 
         print("Map geonames to names")
         for _, city in cities.iterrows():
