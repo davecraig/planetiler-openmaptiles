@@ -311,7 +311,7 @@ public class Poi implements
     String poiClass = poiClass(rawSubclass, element.mappingKey());
     int poiClassRank = poiClassRank(poiClass);
     int rankOrder = poiClassRank + ((nullOrEmpty(name)) ? 2000 : 0);
-
+    String entranceRailwayInfo = null;
     int minzoom = minzoom(element.subclass(), element.mappingKey());
     if (UNIVERSITY_POI_SUBCLASSES.contains(rawSubclass)) {
       // universities that are at least 10% of a tile may appear from Z10
@@ -324,6 +324,7 @@ public class Poi implements
       subclass = element.entrance();
       //	LOGGER.info(" {} {}", poiClass, subclass);
       minzoom = config.maxzoom();
+      entranceRailwayInfo = Parse.parseStringOrNull(element.source().getTag("railway"));
     }
 
     output.setBufferPixels(BUFFER_SIZE)
@@ -333,6 +334,7 @@ public class Poi implements
       .setAttr(Fields.LEVEL, Parse.parseLongOrNull(element.source().getTag("level")))
       .setAttr(Fields.INDOOR, element.indoor() ? 1 : null)
       .setAttr(Fields.AGG_STOP, aggStop)
+      .setAttrWithMinzoom("railway", entranceRailwayInfo, config.maxzoom())
       .setAttrWithMinzoom("naptanCode", element.source().getTag("naptan:NaptanCode"), config.maxzoom())
       .setAttrWithMinzoom("naptanAtcoCode", element.source().getTag("naptan:AtcoCode"), config.maxzoom())
       .setAttrWithMinzoom("naptanBearing", element.source().getTag("naptan:Bearing"), config.maxzoom())
