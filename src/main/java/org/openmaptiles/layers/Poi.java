@@ -338,6 +338,8 @@ public class Poi implements
       .setAttrWithMinzoom("naptanCode", element.source().getTag("naptan:NaptanCode"), config.maxzoom())
       .setAttrWithMinzoom("naptanAtcoCode", element.source().getTag("naptan:AtcoCode"), config.maxzoom())
       .setAttrWithMinzoom("naptanBearing", element.source().getTag("naptan:Bearing"), config.maxzoom())
+      .setAttrWithMinzoom("street", element.source().getTag("addr:street"), config.maxzoom())
+      .setAttrWithMinzoom("housenumber", element.source().getTag("addr:housenumber"), config.maxzoom())
       .putAttrs(OmtLanguageUtils.getNames(element.source().tags(), translations))
       .setPointLabelGridPixelSize(14, 64)
       .setSortKey(rankOrder)
