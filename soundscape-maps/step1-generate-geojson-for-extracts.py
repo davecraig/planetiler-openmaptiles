@@ -738,11 +738,10 @@ def main():
             iso2 = raw_props["iso_a2"]
 
             # Find a GeoNames ID to use for the lookup
+            name_en, name_local = (None, None)
             gn = iso_a2_to_geoname_id.get(iso2)
-            if gn != None:
-                name_en, name_local = (None, None)
-                if gn is not None and alt_idx:
-                    name_en, name_local = choose_en_and_local(gn, row.get("name"), alt_idx, iso2, country_langs)
+            if gn is not None and alt_idx:
+                name_en, name_local = choose_en_and_local(gn, row.get("name"), alt_idx, iso2, country_langs)
 
             countryToContinent[iso2] = raw_props["continent"]
             for v in admin1_iso_filter:
