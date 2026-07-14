@@ -621,6 +621,7 @@ public class Transportation implements
   public void process(Tables.OsmRailwayLinestring element, FeatureCollector features) {
     String railway = element.railway();
     String clazz = railwayClass(railway);
+    String name = nullIfEmpty(element.name());
     if (clazz != null) {
       String service = nullIfEmpty(element.service());
       int minzoom;
@@ -642,6 +643,7 @@ public class Transportation implements
         .setAttr(Fields.RAMP, element.isRamp() ? 1L : null)
         .setAttrWithMinzoom(Fields.BRUNNEL, brunnel(element.isBridge(), element.isTunnel(), element.isFord()), 10)
         .setAttrWithMinzoom(Fields.LAYER, nullIfLong(element.layer(), 0), 9)
+        .setAttrWithMinzoom("name", name, config.maxzoom())
         .setSortKey(element.zOrder())
         .setMinPixelSize(0) // merge during post-processing, then limit by size
         .setMinZoom(minzoom);
