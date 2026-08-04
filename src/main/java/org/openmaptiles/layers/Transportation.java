@@ -475,6 +475,7 @@ public class Transportation implements
     RouteNetwork networkType = routeRelation != null ? routeRelation.networkType : null;
 
     String name = nullIfEmpty(element.name());
+    String ref = nullIfEmpty(element.ref());
 
     String highway = element.highway();
     String highwayClass = highwayClass(element.highway(), element.publicTransport(), element.construction(),
@@ -521,6 +522,7 @@ public class Transportation implements
         .setAttrWithMinzoom(Fields.SURFACE, surface(coalesce(element.surface(), element.tracktype())), 12)
         // max zoom only
         .setAttrWithMinzoom("name", name, config.maxzoom())
+        .setAttrWithMinzoom("ref", ref, config.maxzoom())
         .setAttrWithMinzoom("junction", nullIfEmpty(element.junction()), config.maxzoom())
         .setAttrWithMinzoom("footway", nullIfEmpty(element.footway()), config.maxzoom())
         .setMinPixelSize(0) // merge during post-processing, then limit by size
@@ -622,6 +624,7 @@ public class Transportation implements
     String railway = element.railway();
     String clazz = railwayClass(railway);
     String name = nullIfEmpty(element.name());
+
     if (clazz != null) {
       String service = nullIfEmpty(element.service());
       int minzoom;
