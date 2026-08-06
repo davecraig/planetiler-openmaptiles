@@ -35,6 +35,8 @@ See https://github.com/openmaptiles/openmaptiles/blob/master/LICENSE.md for deta
 */
 package org.openmaptiles.layers;
 
+import static org.openmaptiles.util.Utils.nullIfEmpty;
+
 import com.onthegomap.planetiler.FeatureCollector;
 import com.onthegomap.planetiler.FeatureMerge;
 import com.onthegomap.planetiler.ForwardingProfile;
@@ -171,17 +173,19 @@ public class Water implements
 
   @Override
   public void process(Tables.OsmWaterPolygon element, FeatureCollector features) {
-    if (!"bay".equals(element.natural())) {
-      String clazz = classMapping.getOrElse(element.source(), FieldValues.CLASS_LAKE);
-      features.polygon(LAYER_NAME)
-        .setBufferPixels(BUFFER_SIZE)
-        .setMinPixelSizeBelowZoom(11, 2)
-        .setMinZoom(6)
-        .setAttr(Fields.ID, element.source().id())
-        .setAttr(Fields.INTERMITTENT, element.isIntermittent() ? 1 : 0)
-        .setAttrWithMinzoom(Fields.BRUNNEL, Utils.brunnel(element.isBridge(), element.isTunnel()), 12)
-        .setAttr(Fields.CLASS, clazz);
+    boolean isBay = "bay".equals(element.natural());
+    String clazz = classMapping.getOrElse(element.source(), FieldValues.CLASS_LAKE);
+    features.polygon(LAYER_NAME)
+      .setBufferPixels(BUFFER_SIZE)
+      .setMinPixelSizeBelowZoom(11, 2)
+      .setMinZoom(isBay ? config.maxzoom() : 6)
+      .setAttr(Fields.ID, element.source().id())
+      .setAttr(Fields.INTERMITTENT, element.isIntermittent() ? 1 : 0)
+      .setAttrWithMinzoom(Fields.BRUNNEL, Utils.brunnel(element.isBridge(), element.isTunnel()), 12)
+      .setAttrWithMinzoom("name", nullIfEmpty(element.name()), config.maxzoom())
+      .setAttr(Fields.CLASS, clazz);
 
+    if (!isBay) {
       try {
         attemptNeLakeIdMapping(element);
       } catch (GeometryException e) {
