@@ -74,6 +74,7 @@ public class Water implements
   Tables.OsmWaterPolygon.Handler,
   OpenMapTilesProfile.NaturalEarthProcessor,
   OpenMapTilesProfile.OsmWaterPolygonProcessor,
+  OpenMapTilesProfile.OsmAllProcessor,
   ForwardingProfile.LayerPostProcessor,
   ForwardingProfile.FinishHandler {
 
@@ -193,6 +194,34 @@ public class Water implements
           "Unable to add OSM ID to natural earth water feature", config.logJtsExceptions());
       }
     }
+  }
+
+  /*
+   * Some features are only ever mapped in OSM as a line along their centerline (e.g. straits, some bays)
+   * rather than as an area, so they never appear in the `osm_water_polygon` table (which requires a closed
+   * way/polygon). Catch those here instead, as plain lines in the water layer.
+   */
+  @Override
+  public void processAllOsm(SourceFeature feature, FeatureCollector features) {
+    String natural = feature.getString("natural");
+    if (natural == null || !feature.canBeLine() || feature.canBePolygon()) {
+      return;
+    }
+    // "strait"/"bay" aren't in the water layer's documented CLASS_VALUES (those are reserved for point labels
+    // in the water_name layer's own class field) but there's no other class that fits a named line like this.
+    String clazz = switch (natural) {
+      case "strait" -> "strait";
+      case "bay" -> "bay";
+      default -> null;
+    };
+    if (clazz == null) {
+      return;
+    }
+    features.line(LAYER_NAME)
+      .setBufferPixels(BUFFER_SIZE)
+      .setAttr(Fields.CLASS, clazz)
+      .setAttr("name", nullIfEmpty(feature.getString("name")))
+      .setMinZoom(config.maxzoom());
   }
 
   void attemptNeLakeIdMapping(Tables.OsmWaterPolygon element) throws GeometryException {
