@@ -523,6 +523,7 @@ public class Transportation implements
         // max zoom only
         .setAttrWithMinzoom("name", name, config.maxzoom())
         .setAttrWithMinzoom("ref", ref, config.maxzoom())
+        .setAttrWithMinzoom("tunnel_name", element.source().getTag("tunnel:name"), config.maxzoom())
         .setAttrWithMinzoom("junction", nullIfEmpty(element.junction()), config.maxzoom())
         .setAttrWithMinzoom("footway", nullIfEmpty(element.footway()), config.maxzoom())
         .setMinPixelSize(0) // merge during post-processing, then limit by size
@@ -647,6 +648,7 @@ public class Transportation implements
         .setAttrWithMinzoom(Fields.BRUNNEL, brunnel(element.isBridge(), element.isTunnel(), element.isFord()), 10)
         .setAttrWithMinzoom(Fields.LAYER, nullIfLong(element.layer(), 0), 9)
         .setAttrWithMinzoom("name", name, config.maxzoom())
+        .setAttrWithMinzoom("tunnel_name", element.source().getTag("tunnel:name"), config.maxzoom())
         .setSortKey(element.zOrder())
         .setMinPixelSize(0) // merge during post-processing, then limit by size
         .setMinZoom(minzoom);
