@@ -117,6 +117,13 @@ public class Transportation implements
     FieldValues.SUBCLASS_PRESERVED,
     FieldValues.SUBCLASS_FUNICULAR
   );
+  /**
+   * The node tags that mark where a service actually stops, as opposed to the station or platform
+   * beside the track. Both sit on the line itself, which is what makes them worth carrying: a stop
+   * node belongs to the line it is on, so a consumer never has to guess which line serves a station
+   * from how close the two happen to be.
+   */
+  private static final Set<String> STOP_NODE_VALUES = Set.of("stop", "tram_stop");
   private static final Set<String> RAILWAY_TRANSIT_VALUES = Set.of(
     FieldValues.SUBCLASS_SUBWAY,
     FieldValues.SUBCLASS_LIGHT_RAIL,
@@ -644,15 +651,23 @@ public class Transportation implements
    */
   @Override
   public void processAllOsm(SourceFeature feature, FeatureCollector features) {
-    if (!feature.isPoint() || !feature.hasTag("railway", "stop")) {
+    if (!feature.isPoint()) {
+      return;
+    }
+    String railway = feature.getString("railway");
+    // Null-checked before the lookup: Set.of() throws on contains(null), and all but a handful of
+    // the points reaching here carry no railway tag at all.
+    if (railway == null || !STOP_NODE_VALUES.contains(railway)) {
       return;
     }
     features.point(LAYER_NAME)
       .setBufferPixels(BUFFER_SIZE)
       .putAttrs(OmtLanguageUtils.getNames(feature.tags(), translations))
-      // "rail", the same class railwayClass() gives the lines these nodes sit on.
-      .setAttr(Fields.CLASS, "rail")
-      .setAttr(Fields.SUBCLASS, "stop")
+      // The class the lines these nodes sit on would get from railwayClass(): heavy rail is
+      // "rail", a tramway is "transit". A consumer should still key off the subclass, since
+      // railway=stop turns up on tram lines too and the class then understates it.
+      .setAttr(Fields.CLASS, "tram_stop".equals(railway) ? "transit" : "rail")
+      .setAttr(Fields.SUBCLASS, railway)
       // A literal, as the transportation layer schema has no ref field of its own -
       // the same way the highway lines above carry theirs.
       .setAttr("ref", feature.getString("ref"))

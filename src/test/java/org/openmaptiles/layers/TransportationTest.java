@@ -133,6 +133,78 @@ class TransportationTest extends AbstractLayerTest {
   }
 
   @Test
+  void testRailwayStopNode() {
+    // railway=stop sits on the line itself, at the point a train actually stops - unlike a
+    // railway=station point, which is a place beside the tracks that lines can run past without
+    // calling at.
+    assertFeatures(14, List.of(Map.of(
+      "_layer", "transportation",
+      "_type", "point",
+      "class", "rail",
+      "subclass", "stop",
+      "name", "Milngavie",
+      "_minzoom", 14
+    )), process(pointFeature(Map.of(
+      "railway", "stop",
+      "name", "Milngavie"
+    ))));
+  }
+
+  @Test
+  void testTramStopNode() {
+    // A tramway is a transit class rather than rail, matching the line the node sits on. It stays
+    // a poi as well - that is the platform, this is the point on the line the tram stops at.
+    assertFeatures(14, List.of(Map.of(
+      "_layer", "transportation",
+      "_type", "point",
+      "class", "transit",
+      "subclass", "tram_stop",
+      "name", "Princes Street"
+    ), Map.of(
+      "_layer", "poi",
+      "subclass", "tram_stop"
+    )), process(pointFeature(Map.of(
+      "railway", "tram_stop",
+      "name", "Princes Street"
+    ))));
+  }
+
+  @Test
+  void testRailwayStopCarriesRef() {
+    assertFeatures(14, List.of(Map.of(
+      "_layer", "transportation",
+      "subclass", "stop",
+      "ref", "MLN"
+    )), process(pointFeature(Map.of(
+      "railway", "stop",
+      "name", "Milngavie",
+      "ref", "MLN"
+    ))));
+  }
+
+  @Test
+  void testRailwayStationNodeIsNotAStop() {
+    // Only the stop-position tags reach this layer. A station node is the poi layer's business,
+    // and emitting it here as well would put the same place in a list of what's nearby twice.
+    assertFeatures(14, List.of(Map.of(
+      "_layer", "poi",
+      "subclass", "station"
+    )), process(pointFeature(Map.of(
+      "railway", "station",
+      "name", "Milngavie"
+    ))));
+  }
+
+  @Test
+  void testRailwayStopOnAWayIsNotAPoint() {
+    // The tag on a line is a mistake rather than a stop; only nodes carry it meaningfully.
+    assertFeatures(14, List.of(), process(lineFeature(Map.of(
+      "railway", "stop",
+      "name", "Not A Stop"
+    ))));
+  }
+
+  @Test
   void testUnnamedPath() {
     assertFeatures(14, List.of(Map.of(
       "_layer", "transportation",
