@@ -75,6 +75,7 @@ import org.locationtech.jts.geom.prep.PreparedGeometryFactory;
 import org.openmaptiles.OpenMapTilesProfile;
 import org.openmaptiles.generated.OpenMapTilesSchema;
 import org.openmaptiles.generated.Tables;
+import org.openmaptiles.util.OmtLanguageUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -95,6 +96,7 @@ public class Transportation implements
   Tables.OsmHighwayPolygon.Handler,
   Tables.OsmHighwayPoint.Handler,
   OpenMapTilesProfile.NaturalEarthProcessor,
+  OpenMapTilesProfile.OsmAllProcessor,
   ForwardingProfile.LayerPostProcessor,
   ForwardingProfile.OsmRelationPreprocessor,
   OpenMapTilesProfile.IgnoreWikidata {
@@ -185,11 +187,13 @@ public class Transportation implements
   private final boolean z13Paths;
   private final Stats stats;
   private final PlanetilerConfig config;
+  private final Translations translations;
   private PreparedGeometry greatBritain = null;
   private PreparedGeometry ireland = null;
 
   public Transportation(Translations translations, PlanetilerConfig config, Stats stats) {
     this.config = config;
+    this.translations = translations;
     this.stats = stats;
     z13Paths = config.arguments().getBoolean(
       "transportation_z13_paths",
@@ -618,6 +622,43 @@ public class Transportation implements
       }
     }
     return false;
+  }
+
+  /**
+   * Emits the {@code railway=stop} nodes, which OSM places directly on the line at the point a train actually stops.
+   *
+   * These say where a service calls in a way that a {@code railway=station} point or platform polygon cannot: a station
+   * is a place beside the tracks, and in a dense area several lines run past one without any of them stopping there. A
+   * stop node is on the line itself and belongs to it, so a consumer can say which line stops where without guessing
+   * from proximity.
+   *
+   * Emitted into {@code transportation} rather than {@code transportation_name} - where the motorway junction nodes
+   * live - because the consumer already parses this layer, and into neither the {@code poi} layer nor with a
+   * station-like subclass, because a stop node is not a place in its own right: the station POI is already there, and
+   * duplicating it would put two entries in every list of what's nearby.
+   *
+   * Handled here rather than through a generated Tables row because {@code railway=stop} is in no OpenMapTiles mapping,
+   * and adding one would mean regenerating Tables.java for a single tag on a node type nothing else needs. Whether a
+   * stop node really is on a line is left to the consumer, which has the line geometry to hand and can simply require
+   * the point to lie on it - a check this has no cheap way to make, and which is the same check it would need anyway.
+   */
+  @Override
+  public void processAllOsm(SourceFeature feature, FeatureCollector features) {
+    if (!feature.isPoint() || !feature.hasTag("railway", "stop")) {
+      return;
+    }
+    features.point(LAYER_NAME)
+      .setBufferPixels(BUFFER_SIZE)
+      .putAttrs(OmtLanguageUtils.getNames(feature.tags(), translations))
+      // "rail", the same class railwayClass() gives the lines these nodes sit on.
+      .setAttr(Fields.CLASS, "rail")
+      .setAttr(Fields.SUBCLASS, "stop")
+      // A literal, as the transportation layer schema has no ref field of its own -
+      // the same way the highway lines above carry theirs.
+      .setAttr("ref", feature.getString("ref"))
+      .setAttr("name", feature.getString("name"))
+      // Highest zoom only
+      .setMinZoom(config.maxzoom());
   }
 
   @Override
