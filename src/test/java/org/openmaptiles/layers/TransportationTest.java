@@ -183,6 +183,67 @@ class TransportationTest extends AbstractLayerTest {
   }
 
   @Test
+  void testStopPositionWithTrainIsAStop() {
+    // The scheme that replaced railway=stop, and the only one Bellgrove on the North Clyde Line
+    // carries. Without this the line has no stop of its own there.
+    assertFeatures(14, List.of(Map.of(
+      "_layer", "transportation",
+      "_type", "point",
+      "class", "rail",
+      "subclass", "stop",
+      "name", "Bellgrove",
+      "_minzoom", 14
+    )), process(pointFeature(Map.of(
+      "public_transport", "stop_position",
+      "train", "yes",
+      "name", "Bellgrove"
+    ))));
+  }
+
+  @Test
+  void testStopPositionWithTramIsATramStop() {
+    assertFeatures(14, List.of(Map.of(
+      "_layer", "transportation",
+      "_type", "point",
+      "class", "transit",
+      "subclass", "tram_stop",
+      "name", "Princes Street"
+    )), process(pointFeature(Map.of(
+      "public_transport", "stop_position",
+      "tram", "yes",
+      "name", "Princes Street"
+    ))));
+  }
+
+  @Test
+  void testStopPositionWithoutARailModeIsNotAStop() {
+    // Most stop_position nodes in an extract are bus stops on the road network. Taking those would
+    // put a bus stop on every line they happen to sit near.
+    assertFeatures(14, List.of(), process(pointFeature(Map.of(
+      "public_transport", "stop_position",
+      "bus", "yes",
+      "name", "Not A Train"
+    ))));
+  }
+
+  @Test
+  void testStopPositionCarryingBothTaggingsIsEmittedOnce() {
+    // Plenty of nodes carry the old tagging and the new one together.
+    assertFeatures(14, List.of(Map.of(
+      "_layer", "transportation",
+      "_type", "point",
+      "class", "rail",
+      "subclass", "stop",
+      "name", "Milngavie"
+    )), process(pointFeature(Map.of(
+      "railway", "stop",
+      "public_transport", "stop_position",
+      "train", "yes",
+      "name", "Milngavie"
+    ))));
+  }
+
+  @Test
   void testRailwayStationNodeIsNotAStop() {
     // Only the stop-position tags reach this layer. A station node is the poi layer's business,
     // and emitting it here as well would put the same place in a list of what's nearby twice.

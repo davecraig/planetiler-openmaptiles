@@ -124,6 +124,15 @@ public class Transportation implements
    * from how close the two happen to be.
    */
   private static final Set<String> STOP_NODE_VALUES = Set.of("stop", "tram_stop");
+  /**
+   * The {@code public_transport=stop_position} mode tags that mean the same thing as each {@link #STOP_NODE_VALUES}
+   * entry, heaviest mode first - see {@link #stopSubclass}. A list rather than a map because a node can carry more than
+   * one mode and the first match wins, which needs an order.
+   */
+  private static final List<Map.Entry<String, String>> STOP_POSITION_MODES = List.of(
+    Map.entry("train", "stop"),
+    Map.entry("tram", "tram_stop")
+  );
   private static final Set<String> RAILWAY_TRANSIT_VALUES = Set.of(
     FieldValues.SUBCLASS_SUBWAY,
     FieldValues.SUBCLASS_LIGHT_RAIL,
@@ -632,7 +641,8 @@ public class Transportation implements
   }
 
   /**
-   * Emits the {@code railway=stop} nodes, which OSM places directly on the line at the point a train actually stops.
+   * Emits the stop nodes, which OSM places directly on the line at the point a service actually stops - see
+   * {@link #stopSubclass} for the taggings that count as one.
    *
    * These say where a service calls in a way that a {@code railway=station} point or platform polygon cannot: a station
    * is a place beside the tracks, and in a dense area several lines run past one without any of them stopping there. A
@@ -644,8 +654,8 @@ public class Transportation implements
    * station-like subclass, because a stop node is not a place in its own right: the station POI is already there, and
    * duplicating it would put two entries in every list of what's nearby.
    *
-   * Handled here rather than through a generated Tables row because {@code railway=stop} is in no OpenMapTiles mapping,
-   * and adding one would mean regenerating Tables.java for a single tag on a node type nothing else needs. Whether a
+   * Handled here rather than through a generated Tables row because these tags are in no OpenMapTiles mapping, and
+   * adding one would mean regenerating Tables.java for a node type nothing else needs. Whether a
    * stop node really is on a line is left to the consumer, which has the line geometry to hand and can simply require
    * the point to lie on it - a check this has no cheap way to make, and which is the same check it would need anyway.
    */
@@ -654,10 +664,8 @@ public class Transportation implements
     if (!feature.isPoint()) {
       return;
     }
-    String railway = feature.getString("railway");
-    // Null-checked before the lookup: Set.of() throws on contains(null), and all but a handful of
-    // the points reaching here carry no railway tag at all.
-    if (railway == null || !STOP_NODE_VALUES.contains(railway)) {
+    String subclass = stopSubclass(feature);
+    if (subclass == null) {
       return;
     }
     features.point(LAYER_NAME)
@@ -666,14 +674,46 @@ public class Transportation implements
       // The class the lines these nodes sit on would get from railwayClass(): heavy rail is
       // "rail", a tramway is "transit". A consumer should still key off the subclass, since
       // railway=stop turns up on tram lines too and the class then understates it.
-      .setAttr(Fields.CLASS, "tram_stop".equals(railway) ? "transit" : "rail")
-      .setAttr(Fields.SUBCLASS, railway)
+      .setAttr(Fields.CLASS, "tram_stop".equals(subclass) ? "transit" : "rail")
+      .setAttr(Fields.SUBCLASS, subclass)
       // A literal, as the transportation layer schema has no ref field of its own -
       // the same way the highway lines above carry theirs.
       .setAttr("ref", feature.getString("ref"))
       .setAttr("name", feature.getString("name"))
       // Highest zoom only
       .setMinZoom(config.maxzoom());
+  }
+
+  /**
+   * The {@link Fields#SUBCLASS} to emit for a stop node, or null if this point isn't one.
+   *
+   * {@code railway=stop} and {@code railway=tram_stop} are the older tagging and are taken as they stand. The newer
+   * {@code public_transport=stop_position} says the same thing in the scheme that replaced them, with the mode carried
+   * separately - so a node is only a rail stop when it also says which mode stops there. That matters: most
+   * stop_position nodes in an extract are bus stops on the road network, and taking them all would put a bus stop on
+   * every line they happen to sit near.
+   *
+   * Both taggings are common and neither is complete. Bellgrove on the North Clyde Line carries only the newer one, so
+   * before this the line had no stop of its own there and a consumer was left to guess the station from proximity. A
+   * node carrying both is emitted once, since the railway tag is read first, and one carrying several modes takes the
+   * heaviest.
+   */
+  private static String stopSubclass(SourceFeature feature) {
+    // Null-checked before the lookup: Set.of() throws on contains(null), and all but a handful of
+    // the points reaching here carry no railway tag at all.
+    String railway = feature.getString("railway");
+    if (railway != null && STOP_NODE_VALUES.contains(railway)) {
+      return railway;
+    }
+    if (!feature.hasTag("public_transport", "stop_position")) {
+      return null;
+    }
+    for (var mode : STOP_POSITION_MODES) {
+      if (feature.hasTag(mode.getKey(), "yes")) {
+        return mode.getValue();
+      }
+    }
+    return null;
   }
 
   @Override
