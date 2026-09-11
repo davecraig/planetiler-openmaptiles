@@ -45,7 +45,8 @@ class LanduseTest extends AbstractLayerTest {
   @Test
   void testOsmLanduse() {
     assertFeatures(13, List.of(
-      Map.of("_layer", "poi"),
+      Map.of("_layer", "poi", "_type", "polygon"),
+      Map.of("_layer", "poi", "_type", "point"),
       Map.of(
         "_layer", "landuse",
         "class", "railway",
@@ -56,21 +57,25 @@ class LanduseTest extends AbstractLayerTest {
         "landuse", "railway",
         "amenity", "school"
       ))));
-    assertFeatures(13, List.of(Map.of("_layer", "poi"), Map.of(
-      "_layer", "landuse",
-      "class", "school",
-      "_minpixelsize", 4d,
-      "_minzoom", 9,
-      "_maxzoom", 14
-    )), process(polygonFeature(Map.of(
-      "amenity", "school"
-    ))));
+    assertFeatures(13, List.of(
+      Map.of("_layer", "poi", "_type", "polygon"),
+      Map.of("_layer", "poi", "_type", "point"),
+      Map.of(
+        "_layer", "landuse",
+        "class", "school",
+        "_minpixelsize", 4d,
+        "_minzoom", 9,
+        "_maxzoom", 14
+      )), process(polygonFeature(Map.of(
+        "amenity", "school"
+      ))));
   }
 
   @Test
   void testGraveYardBecomesCemetery() {
     assertFeatures(14, List.of(
-      Map.of("_layer", "poi"),
+      Map.of("_layer", "poi", "_type", "polygon"),
+      Map.of("_layer", "poi", "_type", "point"),
       Map.of(
         "_layer", "landuse",
         "class", "cemetery"

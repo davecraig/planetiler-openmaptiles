@@ -155,6 +155,10 @@ class WaterNameTest extends AbstractLayerTest {
       "_minzoom", 3,
       "_maxzoom", 8,
       "_minpixelsize", 128d
+    ), Map.of(
+      "_layer", "water",
+      "_type", "polygon",
+      "_minzoom", 14
     )), process(SimpleFeature.create(
       GeoUtils.worldToLatLonCoords(rectangle(0, Math.sqrt(1E-7))),
       new HashMap<>(Map.<String, Object>of(
@@ -195,6 +199,10 @@ class WaterNameTest extends AbstractLayerTest {
       "_type", "point",
       "_minzoom", 3,
       "_maxzoom", 8
+    ), Map.of(
+      "_layer", "water",
+      "_type", "polygon",
+      "_minzoom", 14
     )), process(SimpleFeature.create(
       GeoUtils.worldToLatLonCoords(rectangle(0, Math.sqrt(1))),
       new HashMap<>(Map.<String, Object>of(

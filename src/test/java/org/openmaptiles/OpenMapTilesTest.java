@@ -137,7 +137,7 @@ class OpenMapTilesTest {
     assertFeatureNear(mbtiles, "housenumber", Map.of(
       "housenumber", "27"
     ), 7.42117, 43.73652, 14, 14);
-    assertNumFeatures("housenumber", Map.of(), 14, 231, Point.class);
+    assertNumFeatures("housenumber", Map.of(), 14, 274, Point.class);
   }
 
   @Test
@@ -180,7 +180,7 @@ class OpenMapTilesTest {
     assertNumFeatures("poi", Map.of(
       "class", "art_gallery",
       "subclass", "artwork"
-    ), 14, 132, Point.class);
+    ), 14, 130, Point.class);
   }
 
   @Test
@@ -198,10 +198,10 @@ class OpenMapTilesTest {
     assertNumFeatures("transportation", Map.of(
       "class", "path",
       "subclass", "footway"
-    ), 14, 828, LineString.class);
+    ), 14, 1109, LineString.class);
     assertNumFeatures("transportation", Map.of(
       "class", "primary"
-    ), 14, 249, LineString.class);
+    ), 14, 340, LineString.class);
   }
 
   @Test

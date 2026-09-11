@@ -7,6 +7,7 @@ import com.onthegomap.planetiler.geo.GeometryException;
 import com.onthegomap.planetiler.reader.SimpleFeature;
 import com.onthegomap.planetiler.reader.SourceFeature;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Assertions;
@@ -19,6 +20,18 @@ class PoiTest extends AbstractLayerTest {
 
   private SourceFeature feature(boolean area, Map<String, Object> tags) {
     return area ? polygonFeature(tags) : pointFeature(tags);
+  }
+
+  // A POI mapped as an area is emitted twice: the polygon first (for GeoJSON), then a point at its centroid
+  private static List<Map<String, Object>> expectedPoi(boolean area, Map<String, Object> attrs) {
+    if (!area) {
+      return List.of(attrs);
+    }
+    Map<String, Object> polygon = new HashMap<>(attrs);
+    polygon.put("_type", "polygon");
+    Map<String, Object> point = new HashMap<>(attrs);
+    point.put("_type", "point");
+    return List.of(polygon, point);
   }
 
   @Test
@@ -37,10 +50,11 @@ class PoiTest extends AbstractLayerTest {
     ))));
   }
 
+
   @ParameterizedTest
   @ValueSource(booleans = {false, true})
   void testFunicularHalt(boolean area) {
-    assertFeatures(7, List.of(Map.of(
+    assertFeatures(7, expectedPoi(area, Map.of(
       "_layer", "poi",
       "class", "railway",
       "subclass", "halt",
@@ -56,7 +70,7 @@ class PoiTest extends AbstractLayerTest {
   @ParameterizedTest
   @ValueSource(booleans = {false, true})
   void testSubway(boolean area) {
-    assertFeatures(7, List.of(Map.of(
+    assertFeatures(7, expectedPoi(area, Map.of(
       "_layer", "poi",
       "class", "railway",
       "subclass", "subway",
@@ -233,7 +247,7 @@ class PoiTest extends AbstractLayerTest {
   @ParameterizedTest
   @ValueSource(booleans = {false, true})
   void testPlaceOfWorshipFromReligionTag(boolean area) {
-    assertFeatures(7, List.of(Map.of(
+    assertFeatures(7, expectedPoi(area, Map.of(
       "_layer", "poi",
       "class", "place_of_worship",
       "subclass", "religion value",
@@ -263,7 +277,7 @@ class PoiTest extends AbstractLayerTest {
   @ParameterizedTest
   @ValueSource(booleans = {false, true})
   void testInformation(boolean area) {
-    assertFeatures(7, List.of(Map.of(
+    assertFeatures(7, expectedPoi(area, Map.of(
       "_layer", "poi",
       "class", "information",
       "subclass", "infotype",
@@ -284,7 +298,7 @@ class PoiTest extends AbstractLayerTest {
   @ParameterizedTest
   @ValueSource(booleans = {false, true})
   void testFerryTerminal(boolean area) {
-    assertFeatures(7, List.of(Map.of(
+    assertFeatures(7, expectedPoi(area, Map.of(
       "_layer", "poi",
       "class", "ferry_terminal",
       "subclass", "ferry_terminal",

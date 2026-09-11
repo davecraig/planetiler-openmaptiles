@@ -429,7 +429,8 @@ class WaterTest extends AbstractLayerTest {
       "water", "reservoir"
     ))));
     assertFeatures(14, List.of(
-      Map.of("_layer", "poi"),
+      Map.of("_layer", "poi", "_type", "polygon"),
+      Map.of("_layer", "poi", "_type", "point"),
       Map.of(
         "class", "swimming_pool",
 
@@ -440,7 +441,13 @@ class WaterTest extends AbstractLayerTest {
       )), process(polygonFeature(Map.of(
         "leisure", "swimming_pool"
       ))));
-    assertFeatures(14, List.of(), process(polygonFeature(Map.of(
+    // bays are in the water layer at max zoom only, so that bridges crossing them can be described
+    assertFeatures(14, List.of(Map.of(
+      "_layer", "water",
+      "_type", "polygon",
+      "_minzoom", 14,
+      "_maxzoom", 14
+    )), process(polygonFeature(Map.of(
       "natural", "bay"
     ))));
     assertFeatures(14, List.of(Map.of()), process(polygonFeature(Map.of(
@@ -459,6 +466,15 @@ class WaterTest extends AbstractLayerTest {
         "_type", "polygon",
         "_minzoom", 6,
         "_maxzoom", 14),
+      Map.of(
+        "class", "harbor",
+        "subclass", "dock",
+
+        "_layer", "poi",
+        "_type", "polygon",
+        "_minzoom", 14,
+        "_maxzoom", 14
+      ),
       Map.of(
         "class", "harbor",
         "subclass", "dock",
@@ -494,6 +510,11 @@ class WaterTest extends AbstractLayerTest {
         "class", "dock",
         "_layer", "water",
         "_type", "polygon"),
+      Map.of(
+        "class", "harbor",
+        "_layer", "poi",
+        "_type", "polygon"
+      ),
       Map.of(
         "class", "harbor",
         "_layer", "poi",

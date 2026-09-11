@@ -118,10 +118,9 @@ public class Transportation implements
     FieldValues.SUBCLASS_FUNICULAR
   );
   /**
-   * The node tags that mark where a service actually stops, as opposed to the station or platform
-   * beside the track. Both sit on the line itself, which is what makes them worth carrying: a stop
-   * node belongs to the line it is on, so a consumer never has to guess which line serves a station
-   * from how close the two happen to be.
+   * The node tags that mark where a service actually stops, as opposed to the station or platform beside the track.
+   * Both sit on the line itself, which is what makes them worth carrying: a stop node belongs to the line it is on, so
+   * a consumer never has to guess which line serves a station from how close the two happen to be.
    */
   private static final Set<String> STOP_NODE_VALUES = Set.of("stop", "tram_stop");
   /**
@@ -655,9 +654,9 @@ public class Transportation implements
    * duplicating it would put two entries in every list of what's nearby.
    *
    * Handled here rather than through a generated Tables row because these tags are in no OpenMapTiles mapping, and
-   * adding one would mean regenerating Tables.java for a node type nothing else needs. Whether a
-   * stop node really is on a line is left to the consumer, which has the line geometry to hand and can simply require
-   * the point to lie on it - a check this has no cheap way to make, and which is the same check it would need anyway.
+   * adding one would mean regenerating Tables.java for a node type nothing else needs. Whether a stop node really is on
+   * a line is left to the consumer, which has the line geometry to hand and can simply require the point to lie on it -
+   * a check this has no cheap way to make, and which is the same check it would need anyway.
    */
   @Override
   public void processAllOsm(SourceFeature feature, FeatureCollector features) {

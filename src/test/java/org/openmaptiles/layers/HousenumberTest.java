@@ -50,14 +50,18 @@ class HousenumberTest extends AbstractLayerTest {
   }
 
   @Test
-  void testTempAttrs() {
+  void testAddressAttrs() {
     assertFeatures(14, List.of(Map.of(
-      "_has_name", Boolean.TRUE,
-      "_partition", "streetX765/6"
+      "housenumber", "765/6",
+      "street", "street",
+      "housename", "house",
+      "_has_name", "<null>",
+      "_partition", "<null>"
     )), process(polygonFeature(Map.of(
       "addr:housenumber", "765/6",
       "addr:block_number", "X",
       "addr:street", "street",
+      "addr:housename", "house",
       "name", "name"
     ))));
   }
@@ -67,18 +71,12 @@ class HousenumberTest extends AbstractLayerTest {
     var layerName = Housenumber.LAYER_NAME;
     var hn1 = pointFeature(
       layerName,
-      Map.of(
-        "housenumber", "764/2",
-        "_partition", "764/2"
-      ),
+      Map.of("housenumber", "764/2"),
       1
     );
     var hn2 = pointFeature(
       layerName,
-      Map.of(
-        "housenumber", "765/6",
-        "_partition", "765/6"
-      ),
+      Map.of("housenumber", "765/6"),
       1
     );
 
@@ -96,7 +94,7 @@ class HousenumberTest extends AbstractLayerTest {
       layerName,
       Map.of(
         "housenumber", housenumber,
-        "_partition", "street 1" + housenumber
+        "street", "street 1"
       ),
       1
     );
@@ -104,56 +102,35 @@ class HousenumberTest extends AbstractLayerTest {
       layerName,
       Map.of(
         "housenumber", housenumber,
-        "_partition", "street 2" + housenumber
+        "street", "street 2"
       ),
       1
     );
 
-    var result = profile.postProcessLayerFeatures(layerName, 14, List.of(hn1, hn2));
-
     Assertions.assertEquals(
-      1, // same housenumber => two points merged into one multipoint
-      result.size()
+      2, // same housenumber on different streets => kept apart
+      profile.postProcessLayerFeatures(layerName, 14, List.of(hn1, hn2)).size()
     );
-    Assertions.assertEquals(
-      5, // two point in multipoint => 5 commands
-      result.getFirst().geometry().commands().length);
   }
 
   @Test
   void testDuplicateHousenumber() throws GeometryException {
     var layerName = Housenumber.LAYER_NAME;
-    var housenumber = "765/6";
-    var hn1 = pointFeature(
-      layerName,
-      Map.of(
-        "housenumber", housenumber + " (no name)",
-        "_has_name", false,
-        "_partition", housenumber
-      ),
-      1
+    var tags = Map.<String, Object>of(
+      "housenumber", "765/6",
+      "street", "street"
     );
-    var hn2 = pointFeature(
-      layerName,
-      Map.of(
-        "housenumber", housenumber + " (with name)",
-        "_has_name", true,
-        "_partition", housenumber
-      ),
-      1
-    );
+    var hn1 = pointFeature(layerName, tags, 1);
+    var hn2 = pointFeature(layerName, tags, 1);
 
     var result = profile.postProcessLayerFeatures(layerName, 14, List.of(hn1, hn2));
 
-    Assertions.assertEquals(List.of(
-      pointFeature(
-        layerName,
-        Map.of("housenumber", "765/6 (no name)"),
-        1
-      )
-    ), result);
     Assertions.assertEquals(
-      3, // only one point in multipoint => 3 commands
+      1, // duplicates are no longer dropped, but identical ones are merged into one multipoint
+      result.size()
+    );
+    Assertions.assertEquals(
+      5, // two points in multipoint => 5 commands
       result.getFirst().geometry().commands().length);
   }
 }
