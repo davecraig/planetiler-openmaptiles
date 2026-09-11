@@ -50,6 +50,33 @@ class PoiTest extends AbstractLayerTest {
     ))));
   }
 
+  @Test
+  void testJapaneseBlockAddress() {
+    // Most Japanese addresses number a building within its block rather than along a street. The
+    // address is in the housenumber layer as well.
+    assertFeatures(14, List.of(Map.of(
+      "_layer", "housenumber",
+      "housenumber", "20",
+      "block_number", "4",
+      "neighbourhood", "大深町",
+      "suburb", "北区"
+    ), Map.of(
+      "_layer", "poi",
+      "housenumber", "20",
+      "block_number", "4",
+      "neighbourhood", "大深町",
+      "quarter", "<null>",
+      "suburb", "北区",
+      "street", "<null>"
+    )), process(pointFeature(Map.of(
+      "amenity", "post_office",
+      "name", "グランフロント大阪郵便局",
+      "addr:housenumber", "20",
+      "addr:block_number", "4",
+      "addr:neighbourhood", "大深町",
+      "addr:suburb", "北区"
+    ))));
+  }
 
   @ParameterizedTest
   @ValueSource(booleans = {false, true})

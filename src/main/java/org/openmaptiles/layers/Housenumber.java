@@ -125,6 +125,10 @@ public class Housenumber implements
       .setBufferPixels(BUFFER_SIZE)
       .setAttr(Fields.HOUSENUMBER, housenumber)
       .setAttr("street", element.street())
+      .setAttr("block_number", element.source().getTag("addr:block_number"))
+      .setAttr("neighbourhood", element.source().getTag("addr:neighbourhood"))
+      .setAttr("quarter", element.source().getTag("addr:quarter"))
+      .setAttr("suburb", element.source().getTag("addr:suburb"))
       .setAttr("housename", element.source().getTag("addr:housename"))
       .setMinZoom(14);
   }

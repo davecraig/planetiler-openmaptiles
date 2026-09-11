@@ -54,6 +54,7 @@ class HousenumberTest extends AbstractLayerTest {
     assertFeatures(14, List.of(Map.of(
       "housenumber", "765/6",
       "street", "street",
+      "block_number", "X",
       "housename", "house",
       "_has_name", "<null>",
       "_partition", "<null>"
