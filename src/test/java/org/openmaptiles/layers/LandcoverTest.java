@@ -2,6 +2,7 @@ package org.openmaptiles.layers;
 
 import static com.onthegomap.planetiler.TestUtils.rectangle;
 
+import com.onthegomap.planetiler.FeatureCollector;
 import com.onthegomap.planetiler.VectorTile;
 import com.onthegomap.planetiler.geo.GeoUtils;
 import com.onthegomap.planetiler.geo.GeometryException;
@@ -9,6 +10,7 @@ import com.onthegomap.planetiler.reader.SimpleFeature;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.StreamSupport;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.openmaptiles.OpenMapTilesProfile;
@@ -136,6 +138,83 @@ class LandcoverTest extends AbstractLayerTest {
   }
 
   @Test
+  void testOsmLandcoverName() {
+    assertFeatures(14, List.of(Map.of(
+      "_layer", "landcover",
+      "subclass", "heath",
+      "class", "grass",
+      "name", "Drumclog Moor"
+    )), process(polygonFeature(Map.of(
+      "natural", "heath",
+      "name", "Drumclog Moor"
+    ))));
+    assertFeatures(14, List.of(Map.of(
+      "_layer", "landcover",
+      "subclass", "forest",
+      "class", "wood",
+      "name", "Garadhban"
+    )), process(polygonFeature(Map.of(
+      "landuse", "forest",
+      "name", "Garadhban"
+    ))));
+    // farmland is named by the same change, which is one of the ways a farm reaches the tiles
+    assertFeatures(14, List.of(Map.of(
+      "_layer", "landcover",
+      "subclass", "farmland",
+      "class", "farmland",
+      "name", "Farmland name"
+    )), process(polygonFeature(Map.of(
+      "landuse", "farmland",
+      "name", "Farmland name"
+    ))));
+    // max zoom only - below it there must be no name key at all, which is what leaves the
+    // z7-13 merging in postProcess() seeing exactly the attributes it saw before
+    assertFeatures(13, List.of(Map.of(
+      "_layer", "landcover",
+      "subclass", "forest",
+      "class", "wood",
+      "name", "<null>"
+    )), process(polygonFeature(Map.of(
+      "landuse", "forest",
+      "name", "Garadhban"
+    ))));
+    // and an unnamed polygon never gains the key
+    assertFeatures(14, List.of(Map.of(
+      "_layer", "landcover",
+      "subclass", "wood",
+      "class", "wood",
+      "name", "<null>"
+    )), process(polygonFeature(Map.of(
+      "natural", "wood"
+    ))));
+  }
+
+  @Test
+  void testNamesDoNotSplitTheMergeBelowMaxZoom() {
+    // mergeOverlappingPolygons() groups on the exact attribute set, so the whole safety of
+    // adding a name rests on differently named woods being indistinguishable below max zoom.
+    var garadhban = attrsAtZoom(process(polygonFeature(Map.of(
+      "natural", "wood",
+      "name", "Garadhban"
+    ))), 13);
+    var drumclog = attrsAtZoom(process(polygonFeature(Map.of(
+      "natural", "wood",
+      "name", "Drumclog Wood"
+    ))), 13);
+    var unnamed = attrsAtZoom(process(polygonFeature(Map.of(
+      "natural", "wood"
+    ))), 13);
+
+    Assertions.assertEquals(garadhban, drumclog, "two named woods must merge as one at z13");
+    Assertions.assertEquals(garadhban, unnamed, "a named wood must merge with an unnamed one at z13");
+    Assertions.assertNotEquals(
+      attrsAtZoom(process(polygonFeature(Map.of("natural", "wood", "name", "Garadhban"))), 14),
+      attrsAtZoom(process(polygonFeature(Map.of("natural", "wood", "name", "Drumclog Wood"))), 14),
+      "at max zoom they must be told apart, or the name is doing nothing"
+    );
+  }
+
+  @Test
   void testMergeForestsBuNumPointsZ9to13() throws GeometryException {
     Map<String, Object> map = Map.of("subclass", "wood");
 
@@ -188,6 +267,15 @@ class LandcoverTest extends AbstractLayerTest {
     ), 6);
   }
 
+
+  /** The attributes the single landcover feature in {@code features} would carry at {@code zoom}. */
+  private static Map<String, Object> attrsAtZoom(FeatureCollector features, int zoom) {
+    var feature = StreamSupport.stream(features.spliterator(), false)
+      .filter(f -> Landcover.LAYER_NAME.equals(f.getLayer()))
+      .findFirst()
+      .orElseThrow();
+    return feature.getAttrsAtZoom(zoom);
+  }
 
   private VectorTile.Feature feature(org.locationtech.jts.geom.Polygon geom, Map<String, Object> m) {
     return new VectorTile.Feature(

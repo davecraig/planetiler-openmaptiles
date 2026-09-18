@@ -6,6 +6,7 @@ import com.onthegomap.planetiler.VectorTile;
 import com.onthegomap.planetiler.geo.GeoUtils;
 import com.onthegomap.planetiler.geo.GeometryException;
 import com.onthegomap.planetiler.reader.SimpleFeature;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Assertions;
@@ -104,6 +105,96 @@ class LanduseTest extends AbstractLayerTest {
     )), process(polygonFeature(Map.of(
       "landuse", "residential"
     ))));
+  }
+
+  @Test
+  void testOsmLanduseName() {
+    // The landuse table has no name column, so the name is read off the source feature - at max
+    // zoom, as everywhere else. That names quarries, industrial estates and military areas, and
+    // the place=suburb/quarter/neighbourhood polygons, none of which carried one before.
+    assertFeatures(14, List.of(Map.of(
+      "_layer", "landuse",
+      "class", "quarry",
+      "name", "Craigpark Quarry",
+      "_minzoom", 9,
+      "_maxzoom", 14
+    )), process(polygonFeature(Map.of(
+      "landuse", "quarry",
+      "name", "Craigpark Quarry"
+    ))));
+    assertFeatures(13, List.of(Map.of(
+      "_layer", "landuse",
+      "class", "quarry",
+      "name", "<null>"
+    )), process(polygonFeature(Map.of(
+      "landuse", "quarry",
+      "name", "Craigpark Quarry"
+    ))));
+    assertFeatures(14, List.of(Map.of(
+      "_layer", "landuse",
+      "class", "quarry",
+      "name", "<null>"
+    )), process(polygonFeature(Map.of(
+      "landuse", "quarry"
+    ))));
+  }
+
+  @Test
+  void testFarmyard() {
+    // landuse=farmyard is in no OpenMapTiles mapping, so before this the farm buildings and
+    // yard never reached the tiles at all. Max zoom only: going through the handler above would
+    // have given it minzoom 9 and put it on the graphical map.
+    assertFeatures(14, List.of(Map.of(
+      "_layer", "landuse",
+      "_type", "polygon",
+      "class", "farmyard",
+      "name", "Douchlage",
+      "_minzoom", 14,
+      "_maxzoom", 14
+    )), process(polygonFeature(Map.of(
+      "landuse", "farmyard",
+      "name", "Douchlage"
+    ))));
+    // emitted whether named or not, as every other class in this layer is
+    assertFeatures(14, List.of(Map.of(
+      "_layer", "landuse",
+      "class", "farmyard",
+      "name", "<null>",
+      "_minzoom", 14
+    )), process(polygonFeature(Map.of(
+      "landuse", "farmyard"
+    ))));
+    // a node tagged farmyard isn't an area and has nothing to contribute
+    assertFeatures(14, List.of(), process(pointFeature(Map.of(
+      "landuse", "farmyard"
+    ))));
+  }
+
+  @Test
+  void testNamedResidentialDoesNotMergeAtMaxZoom() throws GeometryException {
+    // mergeMultiPolygon() groups on the exact attribute set, so at max zoom - the only zoom
+    // where the name exists - two differently named estates stay separate. That is the point of
+    // having the name; unnamed residential still collapses into a single multipolygon.
+    var westerton = residential(rectangle(10, 20), "Westerton");
+    var kilmardinny = residential(rectangle(20, 10, 22, 20), "Kilmardinny");
+    var moreWesterton = residential(rectangle(20, 10, 22, 20), "Westerton");
+    var unnamed = residential(rectangle(10, 20, 20, 22), null);
+
+    Assertions.assertEquals(3,
+      profile.postProcessLayerFeatures(Landuse.LAYER_NAME, 14, List.of(westerton, kilmardinny, unnamed)).size(),
+      "differently named estates must not be merged into one another");
+    Assertions.assertEquals(1,
+      profile.postProcessLayerFeatures(Landuse.LAYER_NAME, 14, List.of(westerton, moreWesterton)).size(),
+      "two parts of the same named estate must still merge");
+  }
+
+  private VectorTile.Feature residential(org.locationtech.jts.geom.Polygon geom, String name) {
+    Map<String, Object> attrs = new HashMap<>();
+    attrs.put("class", "residential");
+    if (name != null) {
+      attrs.put("name", name);
+    }
+    return new VectorTile.Feature(Landuse.LAYER_NAME, 1, VectorTile.encodeGeometry(geom), attrs, 0);
   }
 
   @Test

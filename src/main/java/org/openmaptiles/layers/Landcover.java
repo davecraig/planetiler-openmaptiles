@@ -35,6 +35,8 @@ See https://github.com/openmaptiles/openmaptiles/blob/master/LICENSE.md for deta
 */
 package org.openmaptiles.layers;
 
+import static org.openmaptiles.util.Utils.nullIfEmpty;
+
 import com.onthegomap.planetiler.FeatureCollector;
 import com.onthegomap.planetiler.FeatureMerge;
 import com.onthegomap.planetiler.ForwardingProfile;
@@ -87,9 +89,11 @@ public class Landcover implements
     FieldValues.SUBCLASS_FOREST
   );
   private final MultiExpression.Index<String> classMapping;
+  private final PlanetilerConfig config;
 
   public Landcover(Translations translations, PlanetilerConfig config, Stats stats) {
     this.classMapping = FieldMappings.Class.index();
+    this.config = config;
   }
 
   private String getClassFromSubclass(String subclass) {
@@ -124,7 +128,7 @@ public class Landcover implements
     String subclass = element.subclass();
     String clazz = getClassFromSubclass(subclass);
     if (clazz != null) {
-      features.polygon(LAYER_NAME).setBufferPixels(BUFFER_SIZE)
+      var feature = features.polygon(LAYER_NAME).setBufferPixels(BUFFER_SIZE)
         .setMinPixelSizeOverrides(MIN_PIXEL_SIZE_THRESHOLDS)
         // default is 0.1, this helps reduce size of some heavy z7-10 tiles
         .setPixelToleranceBelowZoom(10, 0.25)
@@ -132,6 +136,26 @@ public class Landcover implements
         .setAttr(Fields.SUBCLASS, subclass)
         .setNumPointsAttr(TEMP_NUM_POINTS_ATTR)
         .setMinZoom(7);
+
+      /*
+       * A named wood, forest or moor is often the only way to describe where you are in open
+       * country - "Garadhban", "Drumclog Moor". The landcover table has no name column, so the
+       * name is read straight off the source feature, and "name" is a literal because the
+       * landcover layer schema has no name field of its own.
+       *
+       * Max zoom only, as elsewhere - which is also what leaves postProcess() alone. It merges
+       * polygons at z7-13 and returns early above that, and below max zoom this attribute
+       * resolves to null and is dropped, so the attribute sets it groups on are unchanged. Were
+       * the build's maxzoom ever dropped to 13 or below, differently named woods would stop
+       * merging into one another and those tiles would grow.
+       */
+      String name = nullIfEmpty(element.source().getString("name"));
+      if (name != null) {
+        // Guarded rather than set unconditionally: a null value still wraps the attribute in a
+        // ZoomFunction, which would cost every unnamed polygon in the planet's largest polygon
+        // layer a separate attribute map per zoom, for a value that is never there.
+        feature.setAttrWithMinzoom("name", name, config.maxzoom());
+      }
     }
   }
 

@@ -83,6 +83,7 @@ import org.openmaptiles.util.OmtLanguageUtils;
 public class Place implements
   OpenMapTilesSchema.Place,
   OpenMapTilesProfile.NaturalEarthProcessor,
+  OpenMapTilesProfile.OsmAllProcessor,
   Tables.OsmContinentPoint.Handler,
   Tables.OsmCountryPoint.Handler,
   Tables.OsmStatePoint.Handler,
@@ -119,6 +120,7 @@ public class Place implements
   ), 0);
   private final Translations translations;
   private final Stats stats;
+  private final PlanetilerConfig config;
   // spatial indexes for joining natural earth place labels with their corresponding points
   // from openstreetmap
   private PolygonIndex<NaturalEarthRegion> countries = PolygonIndex.create();
@@ -128,6 +130,7 @@ public class Place implements
   public Place(Translations translations, PlanetilerConfig config, Stats stats) {
     this.translations = translations;
     this.stats = stats;
+    this.config = config;
   }
 
   /** Returns the portion of the world that {@code squareMeters} covers where 1 is the entire planet. */
@@ -371,6 +374,48 @@ public class Place implements
         case "6" -> feature.setAttr(Fields.CAPITAL, 6);
       }
     }
+  }
+
+  /*
+   * place=farm is a named farm treated as a locality - "Douchlage" - and after the farmhouse
+   * building itself it is the commonest way a farm carries its name in OSM. The city_point
+   * mapping stops at isolated_dwelling, so like railway=stop in the transportation layer this is
+   * read straight from the raw OSM feature rather than through the generated tables.
+   *
+   * Nearly all of them are nodes, but a few thousand are mapped as an area; those are emitted as
+   * a point on the surface, the same way island and boundary polygons are above.
+   *
+   * Max zoom only, as elsewhere. That does put farms in tiles the app doesn't currently read the
+   * place layer from - it parses place only below the maximum zoom, from the settlement grid -
+   * and that is deliberate: a farm is not a settlement and has no business being picked up by
+   * the settlement lookahead. isolated_dwelling already sits at the same zoom for the same reason.
+   */
+  @Override
+  public void processAllOsm(SourceFeature feature, FeatureCollector features) {
+    if (!feature.hasTag("place", "farm")) {
+      return;
+    }
+    // The city_point mapping requires a name through an imposm filter, which this path doesn't
+    // go through, so it has to require one itself. An unnamed farm is nothing to announce.
+    String name = nullIfEmpty(feature.getString("name"));
+    if (name == null) {
+      return;
+    }
+    FeatureCollector.Feature point;
+    if (feature.isPoint()) {
+      point = features.point(LAYER_NAME);
+    } else if (feature.canBePolygon()) {
+      point = features.pointOnSurface(LAYER_NAME);
+    } else {
+      return;
+    }
+    point
+      .setBufferPixels(BUFFER_SIZE)
+      // "farm" isn't one of the layer's documented CLASS_VALUES, which stop at
+      // isolated_dwelling. It's the OSM value as it stands, as with class=bay in the water layer.
+      .setAttr(Fields.CLASS, "farm")
+      .setAttr("name", name)
+      .setMinZoom(config.maxzoom());
   }
 
   @Override

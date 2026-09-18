@@ -590,6 +590,43 @@ class PlaceTest extends AbstractLayerTest {
   }
 
   @Test
+  void testFarm() {
+    // place=farm is in no OpenMapTiles mapping - city_point stops at isolated_dwelling - so
+    // before this a named farm like Douchlage reached the tiles only if it happened to also have
+    // a named farmhouse building or named farmland around it.
+    assertFeatures(14, List.of(Map.of(
+      "_layer", "place",
+      "_type", "point",
+      "class", "farm",
+      "name", "Douchlage",
+      "_minzoom", 14,
+      "_maxzoom", 14
+    )), process(pointFeature(
+      Map.of(
+        "place", "farm",
+        "name", "Douchlage"
+      ))));
+    // a farm mapped as an area becomes a point on its surface, as islands and boundaries do
+    assertFeatures(14, List.of(Map.of(
+      "_layer", "place",
+      "_type", "point",
+      "class", "farm",
+      "name", "Hoish Farm",
+      "_minzoom", 14
+    )), process(polygonFeature(
+      Map.of(
+        "place", "farm",
+        "name", "Hoish Farm"
+      ))));
+    // city_point requires a name through an imposm filter; this path has to require one itself,
+    // and an unnamed farm is nothing to announce
+    assertFeatures(14, List.of(), process(pointFeature(
+      Map.of(
+        "place", "farm"
+      ))));
+  }
+
+  @Test
   void testCitySetRankFromGridrank() throws GeometryException {
     var layerName = Place.LAYER_NAME;
     Assertions.assertEquals(List.of(), profile.postProcessLayerFeatures(layerName, 13, List.of()));

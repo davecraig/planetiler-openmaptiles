@@ -68,6 +68,7 @@ import org.openmaptiles.generated.Tables;
 public class Landuse implements
   OpenMapTilesSchema.Landuse,
   OpenMapTilesProfile.NaturalEarthProcessor,
+  OpenMapTilesProfile.OsmAllProcessor,
   ForwardingProfile.LayerPostProcessor,
   Tables.OsmLandusePolygon.Handler {
 
@@ -91,7 +92,11 @@ public class Landuse implements
     FieldValues.CLASS_NEIGHBOURHOOD
   );
 
-  public Landuse(Translations translations, PlanetilerConfig config, Stats stats) {}
+  private final PlanetilerConfig config;
+
+  public Landuse(Translations translations, PlanetilerConfig config, Stats stats) {
+    this.config = config;
+  }
 
   @Override
   public void processNaturalEarth(String table, SourceFeature feature, FeatureCollector features) {
@@ -129,7 +134,55 @@ public class Landuse implements
         feature
           .setMinPixelSizeOverrides(MIN_PIXEL_SIZE_THRESHOLDS);
       }
+
+      /*
+       * As in the landcover layer: the name off the source feature, at max zoom only, since the
+       * landuse table has no name column and the layer schema no name field. This names
+       * quarries, industrial estates, military areas and the place=suburb/quarter/neighbourhood
+       * polygons, none of which carried one before.
+       *
+       * postProcess() merges class=residential at z13+ with mergeMultiPolygon(), which groups on
+       * the exact attribute set, so at max zoom differently named residential areas no longer
+       * merge into one another. That is the point of having the name - which estate you are in
+       * is the useful part - and unnamed residential still collapses into a single multipolygon.
+       */
+      String name = nullIfEmpty(element.source().getString("name"));
+      if (name != null) {
+        // Guarded for the same reason as in the landcover layer: an unconditional null would
+        // wrap every unnamed polygon's attributes in a per-zoom ZoomFunction for nothing.
+        feature.setAttrWithMinzoom("name", name, config.maxzoom());
+      }
     }
+  }
+
+  /*
+   * landuse=farmyard is the farm buildings and the yard around them, as distinct from the fields
+   * worked from it (landuse=farmland, which reaches the landcover layer as class=farmland). It is
+   * in no OpenMapTiles mapping at all, so - like railway=stop in the transportation layer - it is
+   * taken directly from the raw OSM feature rather than through the generated tables.
+   *
+   * It belongs in this layer rather than landcover because a farmyard is human land use, and
+   * because this layer takes its class straight from the OSM tag. Landcover resolves class
+   * through a generated subclass->class mapping which has no farmyard in it, and an unmapped
+   * subclass there produces a null class and is silently dropped.
+   *
+   * Emitted whether or not it is named, as every other class in this layer is - that there is a
+   * farm here is worth knowing on its own, and a name is a bonus. But at max zoom only: routing
+   * it through the handler above would have given it minzoom 9, six zoom levels of new polygons
+   * on the graphical map for data that only the callouts want.
+   */
+  @Override
+  public void processAllOsm(SourceFeature feature, FeatureCollector features) {
+    if (!feature.canBePolygon() || !feature.hasTag("landuse", "farmyard")) {
+      return;
+    }
+    features.polygon(LAYER_NAME)
+      .setBufferPixels(BUFFER_SIZE)
+      // "farmyard" is not one of this layer's documented CLASS_VALUES, the same way class=bay
+      // and class=strait are not among the water layer's. No existing class fits it.
+      .setAttr(Fields.CLASS, "farmyard")
+      .setAttr("name", nullIfEmpty(feature.getString("name")))
+      .setMinZoom(config.maxzoom());
   }
 
   @Override
