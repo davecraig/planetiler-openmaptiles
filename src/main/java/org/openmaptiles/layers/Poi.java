@@ -353,6 +353,13 @@ public class Poi implements
       .setPointLabelGridPixelSize(14, 64)
       .setSortKey(rankOrder)
       .setMinZoom(minzoom);
+
+    // Soundscape - the kind of artwork (mural, statue, sculpture...) so that it can be called out
+    // as that rather than as its class, art_gallery, which is shared with galleries.
+    String artworkType = "artwork".equals(rawSubclass) ? element.source().getString("artwork_type") : null;
+    if (artworkType != null) {
+      output.setAttrWithMinzoom("artwork_type", artworkType, config.maxzoom());
+    }
   }
 
   @Override

@@ -301,6 +301,29 @@ class PoiTest extends AbstractLayerTest {
     ))));
   }
 
+  @Test
+  void testArtworkType() {
+    assertFeatures(14, List.of(Map.of(
+      "_layer", "poi",
+      "class", "art_gallery",
+      "subclass", "artwork",
+      "artwork_type", "mural"
+    )), process(pointFeature(Map.of(
+      "tourism", "artwork",
+      "artwork_type", "mural"
+    ))));
+    assertFeatures(14, List.of(Map.of(
+      "_layer", "poi",
+      "class", "art_gallery",
+      "subclass", "gallery",
+      "artwork_type", "<null>"
+    )), process(pointFeature(Map.of(
+      "tourism", "gallery",
+      "artwork_type", "mural",
+      "name", "Gallery"
+    ))));
+  }
+
   @ParameterizedTest
   @ValueSource(booleans = {false, true})
   void testInformation(boolean area) {
