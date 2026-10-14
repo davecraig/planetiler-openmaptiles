@@ -56,6 +56,20 @@ def feature_to_region_geojson(feat: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         return {"type": "Feature", "properties": feat.get("properties", {}), "geometry": geom}
     return None
 
+def read_soundscape_schema(input_tiles: str) -> int:
+    """
+    The "soundscape:schema" version that OpenMapTilesProfile writes into the metadata of the
+    tiles. pmtiles extract copies the metadata into every extract unchanged, and the app compares
+    the version in a downloaded extract with this one from the manifest to decide whether the
+    extract needs updating. Tiles built before the version existed count as 0.
+    """
+    result = subprocess.run(["./pmtiles", "show", input_tiles, "--metadata"],
+                            capture_output=True, text=True, check=False)
+    try:
+        return int(json.loads(result.stdout).get("soundscape:schema", 0))
+    except (ValueError, TypeError, AttributeError):
+        return 0
+
 def run_extract_region(
     input_tiles: str,
     out_path: str,
@@ -118,6 +132,10 @@ def main():
         sys.exit(1)
 
     os.makedirs(args.outdir, exist_ok=True)
+
+    # Every extract is cut from the same tiles, so they all share its schema version
+    schema = read_soundscape_schema(args.input_tiles)
+    print(f"Soundscape schema version: {schema}")
 
     successes = 0
     failures = 0
@@ -191,6 +209,7 @@ def main():
         # Set size and filename
         new_feat["properties"]["extract-size"] = int(size_value)
         new_feat["properties"]["filename"] = filename
+        new_feat["properties"]["schema"] = schema
 
         augmented_features.append(new_feat)
 

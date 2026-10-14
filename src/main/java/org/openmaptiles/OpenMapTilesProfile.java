@@ -188,6 +188,25 @@ public class OpenMapTilesProfile extends ForwardingProfile {
     return OpenMapTilesSchema.VERSION;
   }
 
+  /**
+   * Version of the Soundscape additions to the OpenMapTiles schema. Soundscape compares the value
+   * in a downloaded offline extract against the version it wants and offers an update when the
+   * extract is older. Bump this only when the tile contents change in a way the app makes use of -
+   * the regular rebuilds with fresh OSM data must not change it, or every user is told to update
+   * every map each month.
+   * <p>
+   * Changes so far:
+   * <ul>
+   * <li>1 - first versioned build, includes everything up to artwork_type on artwork POIs</li>
+   * </ul>
+   */
+  public static final int SOUNDSCAPE_SCHEMA = 1;
+
+  @Override
+  public Map<String, String> extraArchiveMetadata() {
+    return Map.of("soundscape:schema", Integer.toString(SOUNDSCAPE_SCHEMA));
+  }
+
   @Override
   public long estimateIntermediateDiskBytes(long osmFileSize) {
     // in late 2021, a 60gb OSM file used 200GB for intermediate storage
