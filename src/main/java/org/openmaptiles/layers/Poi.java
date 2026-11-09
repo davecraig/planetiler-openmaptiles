@@ -360,7 +360,19 @@ public class Poi implements
     if (artworkType != null) {
       output.setAttrWithMinzoom("artwork_type", artworkType, config.maxzoom());
     }
+
+    // Soundscape - whether a gate on a road or path can be got through. The OSM values are passed
+    // through unchanged and the app decides what they mean for someone on foot.
+    if ("barrier".equals(element.mappingKey()) && GATE_SUBCLASSES.contains(rawSubclass)) {
+      var source = element.source();
+      output
+        .setAttrWithMinzoom("locked", source.getString("locked"), config.maxzoom())
+        .setAttrWithMinzoom("access", source.getString("access"), config.maxzoom())
+        .setAttrWithMinzoom("foot", source.getString("foot"), config.maxzoom());
+    }
   }
+
+  private static final Set<String> GATE_SUBCLASSES = Set.of("gate", "lift_gate");
 
   @Override
   public List<VectorTile.Feature> postProcess(int zoom, List<VectorTile.Feature> items) {

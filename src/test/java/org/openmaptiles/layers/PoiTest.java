@@ -324,6 +324,42 @@ class PoiTest extends AbstractLayerTest {
     ))));
   }
 
+  @Test
+  void testGateAccess() {
+    // The tags are passed through as they are, for the app to interpret
+    assertFeatures(14, List.of(Map.of(
+      "_layer", "poi",
+      "subclass", "gate",
+      "locked", "yes",
+      "access", "private",
+      "foot", "designated"
+    )), process(pointFeature(Map.of(
+      "barrier", "gate",
+      "locked", "yes",
+      "access", "private",
+      "foot", "designated"
+    ))));
+    assertFeatures(14, List.of(Map.of(
+      "_layer", "poi",
+      "subclass", "lift_gate",
+      "locked", "<null>",
+      "access", "<null>",
+      "foot", "no"
+    )), process(pointFeature(Map.of(
+      "barrier", "lift_gate",
+      "foot", "no"
+    ))));
+    // Only on gates
+    assertFeatures(14, List.of(Map.of(
+      "_layer", "poi",
+      "subclass", "bollard",
+      "access", "<null>"
+    )), process(pointFeature(Map.of(
+      "barrier", "bollard",
+      "access", "no"
+    ))));
+  }
+
   @ParameterizedTest
   @ValueSource(booleans = {false, true})
   void testInformation(boolean area) {

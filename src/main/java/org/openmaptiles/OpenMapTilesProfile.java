@@ -189,18 +189,18 @@ public class OpenMapTilesProfile extends ForwardingProfile {
   }
 
   /**
-   * Version of the Soundscape additions to the OpenMapTiles schema. Soundscape compares the value
-   * in a downloaded offline extract against the version it wants and offers an update when the
-   * extract is older. Bump this only when the tile contents change in a way the app makes use of -
-   * the regular rebuilds with fresh OSM data must not change it, or every user is told to update
-   * every map each month.
+   * Version of the Soundscape additions to the OpenMapTiles schema. Soundscape compares the value in a downloaded
+   * offline extract against the version it wants and offers an update when the extract is older. Bump this only when
+   * the tile contents change in a way the app makes use of - the regular rebuilds with fresh OSM data must not change
+   * it, or every user is told to update every map each month.
    * <p>
    * Changes so far:
    * <ul>
    * <li>1 - first versioned build, includes everything up to artwork_type on artwork POIs</li>
+   * <li>2 - locked, access and foot tags on gate POIs</li>
    * </ul>
    */
-  public static final int SOUNDSCAPE_SCHEMA = 1;
+  public static final int SOUNDSCAPE_SCHEMA = 2;
 
   @Override
   public Map<String, String> extraArchiveMetadata() {
