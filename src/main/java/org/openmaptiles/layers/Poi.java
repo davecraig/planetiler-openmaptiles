@@ -354,11 +354,16 @@ public class Poi implements
       .setSortKey(rankOrder)
       .setMinZoom(minzoom);
 
-    // Soundscape - the kind of artwork (mural, statue, sculpture...) so that it can be called out
-    // as that rather than as its class, art_gallery, which is shared with galleries.
-    String artworkType = "artwork".equals(rawSubclass) ? element.source().getString("artwork_type") : null;
-    if (artworkType != null) {
-      output.setAttrWithMinzoom("artwork_type", artworkType, config.maxzoom());
+    // Soundscape - the OSM tag that says what kind of thing a POI is, where its subclass alone is too
+    // vague to call out: a mural rather than an art_gallery, a bus shelter rather than a hut on a
+    // hill, a ticket machine rather than a vending machine. The value is passed through unchanged
+    // under the tag's own name and the app decides how to describe it.
+    String typeTag = TYPE_TAGS_BY_SUBCLASS.get(rawSubclass);
+    if (typeTag != null) {
+      String type = element.source().getString(typeTag);
+      if (type != null) {
+        output.setAttrWithMinzoom(typeTag, type, config.maxzoom());
+      }
     }
 
     // Soundscape - whether a gate on a road or path can be got through. The OSM values are passed
@@ -373,6 +378,18 @@ public class Poi implements
   }
 
   private static final Set<String> GATE_SUBCLASSES = Set.of("gate", "lift_gate");
+
+  private static final Map<String, String> TYPE_TAGS_BY_SUBCLASS = Map.of(
+    "artwork", "artwork_type",
+    "shelter", "shelter_type",
+    "memorial", "memorial",
+    "recycling", "recycling_type",
+    "vending_machine", "vending",
+    "social_facility", "social_facility",
+    "fountain", "fountain",
+    "community_centre", "community_centre",
+    "parking", "parking"
+  );
 
   @Override
   public List<VectorTile.Feature> postProcess(int zoom, List<VectorTile.Feature> items) {

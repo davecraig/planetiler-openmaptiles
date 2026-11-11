@@ -13,6 +13,7 @@ import java.util.Map;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.openmaptiles.OpenMapTilesProfile;
 
@@ -357,6 +358,40 @@ class PoiTest extends AbstractLayerTest {
     )), process(pointFeature(Map.of(
       "barrier", "bollard",
       "access", "no"
+    ))));
+  }
+
+  @ParameterizedTest
+  @CsvSource({
+    "amenity, shelter, shelter_type, public_transport",
+    "historic, memorial, memorial, plaque",
+    "amenity, recycling, recycling_type, centre",
+    "amenity, vending_machine, vending, parking_tickets",
+    "amenity, social_facility, social_facility, food_bank",
+    "amenity, fountain, fountain, drinking",
+    "amenity, community_centre, community_centre, village_hall",
+    "amenity, parking, parking, multi-storey",
+  })
+  void testTypeTags(String key, String value, String typeTag, String type) {
+    assertFeatures(14, List.of(Map.of(
+      "_layer", "poi",
+      "subclass", value,
+      typeTag, type
+    )), process(pointFeature(Map.of(
+      key, value,
+      typeTag, type
+    ))));
+  }
+
+  @Test
+  void testTypeTagOnlyOnItsOwnSubclass() {
+    assertFeatures(14, List.of(Map.of(
+      "_layer", "poi",
+      "subclass", "bench",
+      "shelter_type", "<null>"
+    )), process(pointFeature(Map.of(
+      "amenity", "bench",
+      "shelter_type", "public_transport"
     ))));
   }
 
