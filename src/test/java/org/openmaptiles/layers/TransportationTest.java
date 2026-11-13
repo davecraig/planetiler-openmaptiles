@@ -4,6 +4,7 @@ import static com.onthegomap.planetiler.TestUtils.newLineString;
 import static com.onthegomap.planetiler.TestUtils.newPoint;
 import static com.onthegomap.planetiler.TestUtils.rectangle;
 import static java.util.Map.entry;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 
 import com.onthegomap.planetiler.FeatureCollector;
@@ -13,6 +14,7 @@ import com.onthegomap.planetiler.geo.GeometryException;
 import com.onthegomap.planetiler.reader.SimpleFeature;
 import com.onthegomap.planetiler.reader.SourceFeature;
 import com.onthegomap.planetiler.reader.osm.OsmElement;
+import com.onthegomap.planetiler.reader.osm.OsmReader;
 import com.onthegomap.planetiler.reader.osm.OsmRelationInfo;
 import com.onthegomap.planetiler.stats.Stats;
 import java.util.ArrayList;
@@ -2315,6 +2317,174 @@ class TransportationTest extends AbstractLayerTest {
       "class", "motorway",
       "ref", "S7",
       "route_1_ref", "E 77"
+    )), features);
+  }
+
+  private static OsmElement.Relation activeRoute(long id, String type, String route, String network, String name,
+    String ref) {
+    var rel = new OsmElement.Relation(id);
+    rel.setTag("type", type);
+    rel.setTag("route", route);
+    if (network != null) {
+      rel.setTag("network", network);
+    }
+    if (name != null) {
+      rel.setTag("name", name);
+    }
+    if (ref != null) {
+      rel.setTag("ref", ref);
+    }
+    return rel;
+  }
+
+  /** A way in the given relations, each with its role - see lineFeatureWithRelation, which has no roles. */
+  private SourceFeature lineFeatureInRoutes(List<Map.Entry<String, OsmElement.Relation>> memberships,
+    Map<String, Object> tags) {
+    return SimpleFeature.createFakeOsmFeature(
+      newLineString(0, 0, 1, 1),
+      tags,
+      OpenMapTilesProfile.OSM_SOURCE,
+      null,
+      0,
+      memberships.stream()
+        .flatMap(m -> {
+          var infos = profile.preprocessOsmRelation(m.getValue());
+          return infos == null ? Stream.<OsmReader.RelationMember<OsmRelationInfo>>empty() :
+            infos.stream().map(info -> new OsmReader.RelationMember<>(m.getKey(), info));
+        })
+        .toList()
+    );
+  }
+
+  /**
+   * The footway off Douglas Street in Milngavie carries no name since the West Highland Way's name moved to its route
+   * relations. It is in a section of a section of the superroute, and in three other routes besides.
+   */
+  @Test
+  void testUnnamedFootwayKeepsEveryWalkingAndCyclingRoute() {
+    var superroute = activeRoute(16287, "superroute", "hiking", "nwn", "West Highland Way", null);
+    superroute.members().add(new OsmElement.Relation.Member(OsmElement.Type.RELATION, 19772649, ""));
+    var stage = activeRoute(19772649, "route", "hiking", "nwn", "West Highland Way (Milngavie to Drymen)", null);
+    stage.members().add(new OsmElement.Relation.Member(OsmElement.Type.RELATION, 19772647, ""));
+    var section =
+      activeRoute(19772647, "route", "hiking", "nwn", "West Highland Way (Milngavie to Drymen part 1)", null);
+    section.setTag("osmc:symbol", "black:brown:white_circle");
+    var clyde = activeRoute(4550727, "route", "hiking", "rwn", "Clyde Coastal Path", null);
+    var allander = activeRoute(2402046, "route", "hiking", "lwn", "Allander Walkway", null);
+    var greatNorth = activeRoute(10016403, "route", "mtb", "ncn", "Great North Trail (Grampian Mountains)", null);
+
+    // The superroute is itself part of an international trail, which is not what the path is called
+    var international = activeRoute(19123966, "superroute", "hiking", "iwn", "Eastern Continental Trail", null);
+    international.members().add(new OsmElement.Relation.Member(OsmElement.Type.RELATION, 16287, ""));
+    international.members().add(new OsmElement.Relation.Member(OsmElement.Type.RELATION, 4550727, ""));
+
+    // The first pass sees every relation before any way: these only for their members
+    profile.preprocessOsmRelation(international);
+    profile.preprocessOsmRelation(superroute);
+    profile.preprocessOsmRelation(stage);
+
+    var features = process(lineFeatureInRoutes(List.of(
+      entry("", allander),
+      entry("", greatNorth),
+      entry("forward", section),
+      entry("", clyde)
+    ), Map.of("highway", "footway")));
+
+    assertFeatures(14, List.of(mapOf(
+      "_layer", "transportation",
+      "class", "path",
+      "name", "<null>",
+      "route_1_id", 19772647L,
+      "route_1_type", "hiking",
+      "route_1_network", "nwn",
+      "route_1_name", "West Highland Way (Milngavie to Drymen part 1)",
+      "route_1_osmc_symbol", "black:brown:white_circle",
+      "route_1_role", "forward",
+      "route_1_root_id", 16287L,
+      "route_1_root_name", "West Highland Way",
+      // National cycling after national walking, then regional, then local
+      "route_2_id", 10016403L,
+      "route_2_type", "mtb",
+      "route_2_network", "ncn",
+      "route_2_root_id", "<null>",
+      "route_3_name", "Clyde Coastal Path",
+      "route_3_role", "<null>",
+      "route_3_root_id", "<null>",
+      "route_4_name", "Allander Walkway",
+      "route_5_id", "<null>"
+    )), features);
+    // ...and only at max zoom
+    assertFeatures(13, List.of(mapOf(
+      "_layer", "transportation",
+      "route_1_id", "<null>"
+    )), features);
+  }
+
+  /**
+   * OsmReader keeps one info per relation id, so a hiking route must come back as one record that serves both the
+   * Soundscape route attributes and OpenMapTiles' own RouteRelation logic - two would leave only the last.
+   */
+  @Test
+  void testHikingRouteIsOneRelationInfo() {
+    var rel = activeRoute(1, "route", "hiking", "nwn", "Appalachian Trail", "AT");
+    var infos = profile.preprocessOsmRelation(rel);
+    assertEquals(1, infos.size());
+
+    // The OpenMapTiles side still sees it: a path on a national hiking route shows from z12
+    var features = process(lineFeatureWithRelation(infos, Map.of("highway", "path")));
+    assertFeatures(14, List.of(mapOf(
+      "_layer", "transportation",
+      "_minzoom", 12,
+      "route_1_name", "Appalachian Trail"
+    )), features);
+  }
+
+  /** Five local trails share one track near Aberfoyle (OSM way 1571391224): none of them is dropped. */
+  @Test
+  void testOverlappingLocalRoutesAreAllKept() {
+    var red = activeRoute(2866086, "route", "foot", "lwn", "Loch Ard Sculpture Trail", "Red");
+    var blue = activeRoute(2866087, "route", "foot", "lwn", "Ben Lomond Viewpoint", "Blue");
+    var black = activeRoute(12620312, "route", "hiking", "lwn", "8 mile loop", "Black");
+    var lomond = activeRoute(14381798, "route", "bicycle", "lcn", "Gravelfoyle - Lomond View", "lomond");
+    var aqueduct = activeRoute(14381799, "route", "bicycle", "lcn", "Gravelfoyle - Aqueduct Loop", "aqueduct");
+
+    var features = process(lineFeatureInRoutes(List.of(
+      entry("", aqueduct), entry("", black), entry("", lomond), entry("", blue), entry("", red)
+    ), Map.of("highway", "track")));
+
+    assertFeatures(14, List.of(mapOf(
+      "_layer", "transportation",
+      "route_1_ref", "Red",
+      "route_2_ref", "Blue",
+      "route_3_ref", "Black",
+      "route_3_name", "8 mile loop",
+      "route_4_ref", "lomond",
+      "route_4_type", "bicycle",
+      "route_5_ref", "aqueduct",
+      "route_6_id", "<null>"
+    )), features);
+  }
+
+  /**
+   * A route with neither name nor ref has nothing to call it by, a way in the same route twice is listed once, and
+   * other kinds of route are not taken.
+   */
+  @Test
+  void testActiveRouteFiltering() {
+    var anonymous = activeRoute(1, "route", "hiking", "lwn", null, null);
+    var horse = activeRoute(2, "route", "horse", "lwn", "Bridleway", null);
+    var loop = activeRoute(3, "route", "walking", null, "Park loop", null);
+
+    var features = process(lineFeatureInRoutes(List.of(
+      entry("", anonymous), entry("", horse), entry("", loop), entry("", loop)
+    ), Map.of("highway", "path")));
+
+    assertFeatures(14, List.of(mapOf(
+      "_layer", "transportation",
+      "route_1_id", 3L,
+      "route_1_name", "Park loop",
+      "route_1_network", "<null>",
+      "route_2_id", "<null>"
     )), features);
   }
 }

@@ -61,10 +61,13 @@ import com.onthegomap.planetiler.util.ZoomFunction;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -108,6 +111,17 @@ public class Transportation implements
    */
 
   private static final Logger LOGGER = LoggerFactory.getLogger(Transportation.class);
+  /** The route=* values of the walking and cycling routes kept for Soundscape - see preprocessActiveRoute. */
+  private static final Set<String> ACTIVE_ROUTE_TYPES = Set.of("hiking", "foot", "walking", "bicycle", "mtb");
+  private static final Set<String> WALKING_ROUTE_TYPES = Set.of("hiking", "foot", "walking");
+  /**
+   * International, national, regional and then local networks, walking before cycling within each, then by id so the
+   * order is stable. Only the order the routes are written in: which one names a way is up to the app.
+   */
+  private static final Comparator<ActiveRoute> ACTIVE_ROUTE_ORDERING = Comparator
+    .<ActiveRoute>comparingInt(r -> activeRouteNetworkRank(r.network()))
+    .thenComparingInt(r -> WALKING_ROUTE_TYPES.contains(r.type()) ? 0 : 1)
+    .thenComparingLong(ActiveRoute::id);
   private static final Pattern GREAT_BRITAIN_REF_NETWORK_PATTERN = Pattern.compile("^[ABM][0-9ABM()]+");
   private static final Pattern IRELAND_REF_NETWORK_PATTERN = Pattern.compile("^[MNRL][0-9]+");
   private static final MultiExpression.Index<String> classMapping = FieldMappings.Class.index();
@@ -198,6 +212,10 @@ public class Transportation implements
   private static final String LIMIT_MERGE_TAG = "__limit_merge";
   private static final String OSM_ID_MERGE_TAG = "__osm_id_merge";
   private final AtomicBoolean loggedNoGb = new AtomicBoolean(false);
+  // Soundscape: filled during the first pass by preprocessActiveRoute, read once it's over - see activeRouteRoot
+  private final Map<Long, List<Long>> activeRouteParents = new ConcurrentHashMap<>();
+  private final Map<Long, String> activeRouteNames = new ConcurrentHashMap<>();
+  private final Map<Long, String> activeRouteNetworks = new ConcurrentHashMap<>();
   private final AtomicBoolean loggedNoIreland = new AtomicBoolean(false);
   private final boolean z13Paths;
   private final Stats stats;
@@ -354,6 +372,120 @@ public class Transportation implements
 
   @Override
   public List<OsmRelationInfo> preprocessOsmRelation(OsmElement.Relation relation) {
+    // One record per relation: OsmReader keeps a single info per relation id, so a second one returned here for the
+    // same relation silently replaces the first. A hiking route that OpenMapTiles ranks as a RouteRelation travels
+    // inside the ActiveRoute instead - see getRouteRelations.
+    RouteRelation routeRelation = preprocessRouteRelation(relation);
+    ActiveRoute activeRoute = preprocessActiveRoute(relation, routeRelation);
+    if (activeRoute != null) {
+      return List.of(activeRoute);
+    }
+    return routeRelation == null ? null : List.of(routeRelation);
+  }
+
+  /**
+   * Soundscape: every walking and cycling route a way belongs to, kept whole rather than ranked down to one. A blind
+   * walker hears an unnamed path as "Path" unless something names it, and since mappers moved route names off the ways
+   * and onto the route relations - which is right for OSM - the relation is the only place left to find "West Highland
+   * Way". A way commonly carries several routes at once (five local trails share one track near Aberfoyle, OSM way
+   * 1571391224), and the app will later let the user pick one of them to follow, so none is dropped here: which one
+   * names the way is the app's choice.
+   * <p>
+   * Long routes are built from sections - "West Highland Way (Milngavie to Drymen part 1)" is in "West Highland Way
+   * (Milngavie to Drymen)", which is in the superroute "West Highland Way" - so the parents of every member relation
+   * are recorded here too, for {@link #activeRouteRoot} to walk up once the first pass is over.
+   * <p>
+   * Kept apart from {@link RouteRelation}, which the OpenMapTiles minzoom, network and transportation_name route_N
+   * logic is built on: adding foot and cycle routes to that would change what OpenMapTiles itself does with them.
+   */
+  private ActiveRoute preprocessActiveRoute(OsmElement.Relation relation, RouteRelation routeRelation) {
+    String route = relation.getString("route");
+    if (route == null || !ACTIVE_ROUTE_TYPES.contains(route) ||
+      !relation.hasTag("type", "route", "superroute")) {
+      return null;
+    }
+    String name = nullIfEmpty(relation.getString("name"));
+    String network = nullIfEmpty(relation.getString("network"));
+    if (name != null) {
+      activeRouteNames.put(relation.id(), name);
+    }
+    if (network != null) {
+      activeRouteNetworks.put(relation.id(), network);
+    }
+    for (var member : relation.members()) {
+      if (member.type() == OsmElement.Type.RELATION) {
+        activeRouteParents.computeIfAbsent(member.ref(), k -> new CopyOnWriteArrayList<>()).add(relation.id());
+      }
+    }
+    String ref = nullIfEmpty(relation.getString("ref"));
+    if (name == null && ref == null) {
+      // Nothing to call it, and nothing a user could choose it by
+      return null;
+    }
+    return new ActiveRoute(
+      relation.id(),
+      route,
+      network,
+      ref,
+      name,
+      coalesce(nullIfEmpty(relation.getString("colour")), nullIfEmpty(relation.getString("ref:colour"))),
+      nullIfEmpty(relation.getString("osmc:symbol")),
+      routeRelation
+    );
+  }
+
+  /**
+   * The id of the whole route {@code id} is a section of, or {@code id} itself if it is not a section - see
+   * {@link #preprocessActiveRoute}. Only valid once the first pass over the relations is complete.
+   * <p>
+   * Walks up only through parents on the same network. The superroute "West Highland Way" is itself part of the
+   * international "Eastern Continental Trail", as is the regional Clyde Coastal Path, and a walker on either is on the
+   * West Highland Way or the Clyde Coastal Path rather than on a trail from Florida. Where a section has several
+   * parents on its network, the lowest id is taken so that every build picks the same one.
+   */
+  long activeRouteRoot(long id) {
+    String network = activeRouteNetworks.get(id);
+    if (network == null) {
+      return id;
+    }
+    long current = id;
+    // Bounded, so that relations listing each other can't hang the build
+    for (int depth = 0; depth < 10; depth++) {
+      List<Long> parents = activeRouteParents.get(current);
+      if (parents == null) {
+        break;
+      }
+      long next = Long.MAX_VALUE;
+      for (long parent : parents) {
+        if (parent != id && network.equals(activeRouteNetworks.get(parent))) {
+          next = Math.min(next, parent);
+        }
+      }
+      if (next == Long.MAX_VALUE) {
+        break;
+      }
+      current = next;
+    }
+    return current;
+  }
+
+  /**
+   * The walking and cycling routes {@code element} belongs to, best known first, each once with the role it has in it -
+   * see {@link #preprocessActiveRoute}.
+   */
+  List<OsmReader.RelationMember<ActiveRoute>> getActiveRoutes(SourceFeature element) {
+    List<OsmReader.RelationMember<ActiveRoute>> result = new ArrayList<>();
+    Set<Long> seen = new HashSet<>();
+    for (var member : element.relationInfo(ActiveRoute.class)) {
+      if (seen.add(member.relation().id())) {
+        result.add(member);
+      }
+    }
+    result.sort(Comparator.comparing(OsmReader.RelationMember::relation, ACTIVE_ROUTE_ORDERING));
+    return result;
+  }
+
+  private RouteRelation preprocessRouteRelation(OsmElement.Relation relation) {
     if (relation.hasTag("route", "road", "hiking")) {
       RouteNetwork networkType = null;
       String network = relation.getString("network");
@@ -399,19 +531,36 @@ public class Transportation implements
       };
 
       if (network != null || rank < 3) {
-        return List
-          .of(new RouteRelation(coalesce(ref, ""), network, name, colour, networkType, (byte) rank, relation.id()));
+        return new RouteRelation(coalesce(ref, ""), network, name, colour, networkType, (byte) rank, relation.id());
       }
     }
     return null;
   }
 
+  private static int activeRouteNetworkRank(String network) {
+    return switch (coalesce(network, "")) {
+      case "iwn", "icn" -> 0;
+      case "nwn", "ncn" -> 1;
+      case "rwn", "rcn" -> 2;
+      case "lwn", "lcn" -> 3;
+      default -> 4;
+    };
+  }
+
   List<RouteRelation> getRouteRelations(Tables.OsmHighwayLinestring element) {
     String ref = element.ref();
-    List<OsmReader.RelationMember<RouteRelation>> relations = element.source().relationInfo(RouteRelation.class);
+    List<RouteRelation> relations = new ArrayList<>();
+    for (var member : element.source().relationInfo(RouteRelation.class)) {
+      relations.add(member.relation());
+    }
+    // Soundscape: and the hiking routes that arrive inside an ActiveRoute - see preprocessOsmRelation
+    for (var member : element.source().relationInfo(ActiveRoute.class)) {
+      if (member.relation().omtRoute() != null) {
+        relations.add(member.relation().omtRoute());
+      }
+    }
     List<RouteRelation> result = new ArrayList<>(relations.size() + 1);
-    for (var relationMember : relations) {
-      var relation = relationMember.relation();
+    for (var relation : relations) {
       // avoid duplicates - list should be very small and usually only one
       if (!result.contains(relation)) {
         result.add(relation);
@@ -554,6 +703,43 @@ public class Transportation implements
           .setAttr(Fields.LEVEL, Parse.parseLongOrNull(element.source().getTag("level")))
           .setAttr(Fields.INDOOR, element.indoor() ? 1 : null);
       }
+
+      setActiveRouteAttrs(feature, element.source());
+    }
+  }
+
+  /**
+   * Soundscape: route_1_*, route_2_* ... for every walking and cycling route the way belongs to - see
+   * {@link #preprocessActiveRoute}. Max zoom only, where the transportation layer only merges pieces of the same OSM
+   * way, so every piece keeps them. Repeated values cost little: a tile stores each distinct value once per layer.
+   */
+  private void setActiveRouteAttrs(FeatureCollector.Feature feature, SourceFeature source) {
+    int maxzoom = config.maxzoom();
+    int index = 0;
+    for (var member : getActiveRoutes(source)) {
+      ActiveRoute route = member.relation();
+      String prefix = "route_" + (++index) + "_";
+      feature
+        .setAttrWithMinzoom(prefix + "id", route.id(), maxzoom)
+        .setAttrWithMinzoom(prefix + "type", route.type(), maxzoom);
+      setIfPresent(feature, prefix + "network", route.network(), maxzoom);
+      setIfPresent(feature, prefix + "ref", route.ref(), maxzoom);
+      setIfPresent(feature, prefix + "name", route.name(), maxzoom);
+      setIfPresent(feature, prefix + "colour", route.colour(), maxzoom);
+      setIfPresent(feature, prefix + "osmc_symbol", route.osmcSymbol(), maxzoom);
+      setIfPresent(feature, prefix + "role", nullIfEmpty(member.role()), maxzoom);
+      long root = activeRouteRoot(route.id());
+      if (root != route.id()) {
+        feature.setAttrWithMinzoom(prefix + "root_id", root, maxzoom);
+        setIfPresent(feature, prefix + "root_name", activeRouteNames.get(root), maxzoom);
+      }
+    }
+  }
+
+  /** A null value still costs a per-zoom attribute map, so leave the attribute off instead. */
+  private static void setIfPresent(FeatureCollector.Feature feature, String key, Object value, int minzoom) {
+    if (value != null) {
+      feature.setAttrWithMinzoom(key, value, minzoom);
     }
   }
 
@@ -857,6 +1043,36 @@ public class Transportation implements
   }
 
   /** Information extracted from route relations to use when processing ways in that relation. */
+  /**
+   * A walking or cycling route relation - see {@link #preprocessActiveRoute}. {@code type} is the relation's route tag.
+   * {@code omtRoute} is the same relation as OpenMapTiles' own {@link RouteRelation}, where it is one - see
+   * {@link #preprocessOsmRelation}.
+   */
+  record ActiveRoute(
+    @Override long id,
+    String type,
+    String network,
+    String ref,
+    String name,
+    String colour,
+    String osmcSymbol,
+    RouteRelation omtRoute
+  ) implements OsmRelationInfo {
+
+    @Override
+    public long estimateMemoryUsageBytes() {
+      return CLASS_HEADER_BYTES +
+        MemoryEstimator.estimateSizeLong(id) +
+        POINTER_BYTES + estimateSize(type) +
+        POINTER_BYTES + estimateSize(network) +
+        POINTER_BYTES + estimateSize(ref) +
+        POINTER_BYTES + estimateSize(name) +
+        POINTER_BYTES + estimateSize(colour) +
+        POINTER_BYTES + estimateSize(osmcSymbol) +
+        POINTER_BYTES + (omtRoute == null ? 0 : omtRoute.estimateMemoryUsageBytes());
+    }
+  }
+
   record RouteRelation(
     String ref,
     String network,
