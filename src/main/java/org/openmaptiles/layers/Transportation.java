@@ -426,6 +426,7 @@ public class Transportation implements
       relation.id(),
       route,
       network,
+      nullIfEmpty(relation.getString("network:type")),
       ref,
       name,
       coalesce(nullIfEmpty(relation.getString("colour")), nullIfEmpty(relation.getString("ref:colour"))),
@@ -723,6 +724,7 @@ public class Transportation implements
         .setAttrWithMinzoom(prefix + "id", route.id(), maxzoom)
         .setAttrWithMinzoom(prefix + "type", route.type(), maxzoom);
       setIfPresent(feature, prefix + "network", route.network(), maxzoom);
+      setIfPresent(feature, prefix + "network_type", route.networkType(), maxzoom);
       setIfPresent(feature, prefix + "ref", route.ref(), maxzoom);
       setIfPresent(feature, prefix + "name", route.name(), maxzoom);
       setIfPresent(feature, prefix + "colour", route.colour(), maxzoom);
@@ -1047,11 +1049,16 @@ public class Transportation implements
    * A walking or cycling route relation - see {@link #preprocessActiveRoute}. {@code type} is the relation's route tag.
    * {@code omtRoute} is the same relation as OpenMapTiles' own {@link RouteRelation}, where it is one - see
    * {@link #preprocessOsmRelation}.
+   * <p>
+   * {@code networkType} is the relation's network:type. "node_network" marks one stretch of a numbered junction network
+   * - the Dutch and Belgian walking and cycling networks, ref "V72-V74" between junctions V72 and V74 - which is mapped
+   * as rwn/rcn like a real regional route, and which a consumer has to be able to tell apart from one.
    */
   record ActiveRoute(
     @Override long id,
     String type,
     String network,
+    String networkType,
     String ref,
     String name,
     String colour,
@@ -1065,6 +1072,7 @@ public class Transportation implements
         MemoryEstimator.estimateSizeLong(id) +
         POINTER_BYTES + estimateSize(type) +
         POINTER_BYTES + estimateSize(network) +
+        POINTER_BYTES + estimateSize(networkType) +
         POINTER_BYTES + estimateSize(ref) +
         POINTER_BYTES + estimateSize(name) +
         POINTER_BYTES + estimateSize(colour) +

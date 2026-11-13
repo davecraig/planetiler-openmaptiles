@@ -2439,6 +2439,31 @@ class TransportationTest extends AbstractLayerTest {
     )), features);
   }
 
+  /**
+   * A stretch of the Dutch walking node network around Ede (OSM relation 21159993): mapped as rwn like a regional route,
+   * with only the junction numbers as its ref. network:type is what says it isn't one.
+   */
+  @Test
+  void testNodeNetworkStretchKeepsItsNetworkType() {
+    var stretch = activeRoute(21159993, "route", "foot", "rwn", null, "V72-V74");
+    stretch.setTag("network:type", "node_network");
+    stretch.setTag("osmc:symbol", "white:blue:white_arrow");
+    var walk = activeRoute(21149725, "route", "foot", "lwn", "Pegasus I", null);
+
+    var features = process(lineFeatureInRoutes(List.of(
+      entry("", walk), entry("", stretch)
+    ), Map.of("highway", "footway")));
+
+    assertFeatures(14, List.of(mapOf(
+      "_layer", "transportation",
+      "route_1_ref", "V72-V74",
+      "route_1_network", "rwn",
+      "route_1_network_type", "node_network",
+      "route_2_name", "Pegasus I",
+      "route_2_network_type", "<null>"
+    )), features);
+  }
+
   /** Five local trails share one track near Aberfoyle (OSM way 1571391224): none of them is dropped. */
   @Test
   void testOverlappingLocalRoutesAreAllKept() {
