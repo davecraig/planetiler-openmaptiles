@@ -705,8 +705,32 @@ public class Transportation implements
           .setAttr(Fields.INDOOR, element.indoor() ? 1 : null);
       }
 
+      if (FieldValues.CLASS_PATH.equals(highwayClass) || FieldValues.CLASS_TRACK.equals(highwayClass)) {
+        setPathCharacterAttrs(feature, element.source());
+      }
       setActiveRouteAttrs(feature, element.source());
     }
+  }
+
+  /**
+   * Soundscape: what a path or track is like underfoot and how plain it is to follow, at max zoom only. OpenMapTiles'
+   * {@code surface} is just paved or unpaved, which makes a compacted gravel path and the grass and dirt paths leaving
+   * it all the same - yet that difference is what a walker follows, and what tells which arm of a junction carries on
+   * the path they're on. So the OSM values are passed through: {@code surface_raw} (the {@code surface} key is taken),
+   * {@code tracktype}, {@code trail_visibility}, {@code width} in metres and {@code informal}. Roads are left out, being
+   * almost all asphalt.
+   */
+  private void setPathCharacterAttrs(FeatureCollector.Feature feature, SourceFeature source) {
+    int maxzoom = config.maxzoom();
+    setIfPresent(feature, "surface_raw", nullIfEmpty(source.getString("surface")), maxzoom);
+    setIfPresent(feature, "tracktype", nullIfEmpty(source.getString("tracktype")), maxzoom);
+    setIfPresent(feature, "trail_visibility", nullIfEmpty(source.getString("trail_visibility")), maxzoom);
+    Double width = Parse.meters(source.getTag("width"));
+    if (width != null && width > 0) {
+      // "0.5 m" and "0.5" are the same width and so one tile value; to the centimetre, so 1.4999 is 1.5
+      setIfPresent(feature, "width", Math.round(width * 100) / 100d, maxzoom);
+    }
+    setIfPresent(feature, "informal", source.hasTag("informal", "yes") ? 1 : null, maxzoom);
   }
 
   /**

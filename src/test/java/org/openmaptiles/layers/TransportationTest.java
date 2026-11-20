@@ -29,6 +29,74 @@ import org.openmaptiles.OpenMapTilesProfile;
 
 class TransportationTest extends AbstractLayerTest {
 
+  /** The gravel path through Mugdock Country Park and the grass path off it - see setPathCharacterAttrs. */
+  @Test
+  void testPathCharacterAtMaxZoom() {
+    var gravel = process(lineFeature(Map.of(
+      "highway", "footway",
+      "surface", "compacted",
+      "width", "1.5 m",
+      "trail_visibility", "excellent"
+    )));
+    assertFeatures(14, List.of(Map.of(
+      "_layer", "transportation",
+      "class", "path",
+      "surface", "unpaved",
+      "surface_raw", "compacted",
+      "width", 1.5,
+      "trail_visibility", "excellent",
+      "informal", "<null>",
+      "tracktype", "<null>"
+    )), gravel);
+    // Not below max zoom, where the tiles are drawn rather than read
+    assertFeatures(13, List.of(Map.of(
+      "_layer", "transportation",
+      "surface", "unpaved",
+      "surface_raw", "<null>",
+      "width", "<null>"
+    )), gravel);
+
+    assertFeatures(14, List.of(Map.of(
+      "_layer", "transportation",
+      "class", "path",
+      "surface_raw", "grass",
+      "width", 0.5,
+      "trail_visibility", "intermediate",
+      "informal", 1
+    )), process(lineFeature(Map.of(
+      "highway", "path",
+      "surface", "grass",
+      "width", "0.5",
+      "trail_visibility", "intermediate",
+      "informal", "yes"
+    ))));
+
+    assertFeatures(14, List.of(Map.of(
+      "_layer", "transportation",
+      "class", "track",
+      "surface", "paved",
+      "surface_raw", "<null>",
+      "tracktype", "grade1"
+    )), process(lineFeature(Map.of(
+      "highway", "track",
+      "tracktype", "grade1",
+      "width", "nonsense"
+    ))));
+
+    // Roads keep only OpenMapTiles' paved/unpaved
+    assertFeatures(14, List.of(Map.of(
+      "_layer", "transportation",
+      "class", "minor",
+      "surface", "paved",
+      "surface_raw", "<null>",
+      "width", "<null>"
+    )), process(lineFeature(Map.of(
+      "highway", "residential",
+      "surface", "asphalt",
+      "width", "6"
+    ))));
+  }
+
   @Test
   void testNamedFootway() {
     FeatureCollector result = process(lineFeature(Map.of(
