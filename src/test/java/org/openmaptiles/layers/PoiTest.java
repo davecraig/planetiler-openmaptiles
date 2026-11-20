@@ -35,6 +35,52 @@ class PoiTest extends AbstractLayerTest {
     return List.of(polygon, point);
   }
 
+  /** The Falls of Falloch, on the West Highland Way - see Poi.processAllOsm. */
+  @Test
+  void testWaterfall() {
+    assertFeatures(14, List.of(Map.of(
+      "_layer", "poi",
+      "class", "waterfall",
+      "subclass", "waterfall",
+      "name", "Falls of Falloch",
+      "height", 9.0,
+      "_minzoom", 14
+    )), process(pointFeature(Map.of(
+      "waterway", "waterfall",
+      "name", "Falls of Falloch",
+      "height", "9 m"
+    ))));
+    // Unnamed ones too: there's a waterfall there all the same
+    assertFeatures(14, List.of(Map.of(
+      "_layer", "poi",
+      "class", "waterfall",
+      "name", "<null>"
+    )), process(pointFeature(Map.of("waterway", "waterfall"))));
+    assertFeatures(14, List.of(Map.of(
+      "_layer", "poi",
+      "class", "waterfall"
+    )), process(pointFeature(Map.of("natural", "waterfall"))));
+  }
+
+  @Test
+  void testWaterfallAlsoAnAttractionIsNotDoubled() {
+    var features = process(pointFeature(Map.of(
+      "waterway", "waterfall",
+      "tourism", "attraction",
+      "name", "Grey Mare's Tail"
+    )));
+    assertFeatures(14, List.of(Map.of(
+      "_layer", "poi",
+      "class", "attraction",
+      "name", "Grey Mare's Tail"
+    )), features);
+  }
+
+  @Test
+  void testOtherWaterwayNodesAreNotWaterfalls() {
+    assertFeatures(14, List.of(), process(pointFeature(Map.of("waterway", "weir"))));
+  }
+
   @Test
   void testFenwayPark() {
     assertFeatures(7, List.of(Map.of(

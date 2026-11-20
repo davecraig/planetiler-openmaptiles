@@ -43,6 +43,7 @@ import static org.openmaptiles.util.Utils.nullOrEmpty;
 
 import com.carrotsearch.hppc.LongIntMap;
 import com.onthegomap.planetiler.FeatureCollector;
+import com.onthegomap.planetiler.reader.SourceFeature;
 import com.onthegomap.planetiler.ForwardingProfile;
 import com.onthegomap.planetiler.VectorTile;
 import com.onthegomap.planetiler.collection.Hppc;
@@ -78,6 +79,7 @@ import org.slf4j.LoggerFactory;
  */
 public class Poi implements
   OpenMapTilesSchema.Poi,
+  OpenMapTilesProfile.OsmAllProcessor,
   Tables.OsmPoiPoint.Handler,
   Tables.OsmPoiPolygon.Handler,
   ForwardingProfile.LayerPostProcessor,
@@ -162,6 +164,36 @@ public class Poi implements
   @Override
   public void release() {
     aggStops.clear();
+  }
+
+  /**
+   * Soundscape: waterfalls, which OpenMapTiles leaves out of every layer - waterway=waterfall is a
+   * node on the stream, and the waterway layer is lines only. Somewhere to walk to and something to
+   * hear on the way: Scotland has 893, 240 of them named. Max zoom only, as the app reads it; one
+   * also tagged tourism=* is already a POI from the imposm mapping (usually an attraction), so isn't
+   * added twice. The app knows class=waterfall as a landmark.
+   */
+  @Override
+  public void processAllOsm(SourceFeature feature, FeatureCollector features) {
+    if (!feature.isPoint()) {
+      return;
+    }
+    if (!feature.hasTag("waterway", "waterfall") && !feature.hasTag("natural", "waterfall")) {
+      return;
+    }
+    if (feature.hasTag("tourism")) {
+      return;
+    }
+    String name = nullIfEmpty(feature.getString("name"));
+    features.point(LAYER_NAME)
+      .setBufferPixels(BUFFER_SIZE)
+      .setAttr(Fields.CLASS, "waterfall")
+      .setAttr(Fields.SUBCLASS, "waterfall")
+      .putAttrs(OmtLanguageUtils.getNames(feature.tags(), translations))
+      .setAttrWithMinzoom("height", Parse.meters(feature.getTag("height")), config.maxzoom())
+      .setPointLabelGridPixelSize(14, 64)
+      .setSortKey(poiClassRank("waterfall") + (name == null ? 2000 : 0))
+      .setMinZoom(config.maxzoom());
   }
 
   @Override
