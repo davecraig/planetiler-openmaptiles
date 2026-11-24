@@ -1006,6 +1006,9 @@ public class Transportation implements
           .setAttr(Fields.SUBCLASS, highwaySubclass(highwayClass, element.publicTransport(), element.highway()))
           .setAttr(Fields.BRUNNEL, brunnel("bridge".equals(manMade), false, false))
           .setAttr(Fields.LAYER, nullIfLong(element.layer(), 0))
+          // A platform's number - "On platform 2" for someone who can't see the sign. Lines keep
+          // their ref (see above), but a platform mapped as an area is a polygon.
+          .setAttrWithMinzoom("ref", nullIfEmpty(element.source().getString("ref")), config.maxzoom())
           .setSortKey(element.zOrder())
           .setMinZoom(13);
       }

@@ -2155,6 +2155,30 @@ class TransportationTest extends AbstractLayerTest {
   }
 
   @Test
+  void testPlatformAreaKeepsItsRef() {
+    var platform = closedWayFeature(Map.of(
+      "public_transport", "platform",
+      "railway", "platform",
+      "area", "yes",
+      "ref", "2"
+    ));
+    assertFeatures(14, List.of(Map.of(
+      "_layer", "transportation",
+      "class", "path",
+      "subclass", "platform",
+      "ref", "2",
+      "_type", "polygon"
+    )), process(platform));
+    // Like a line's ref, max zoom only
+    assertFeatures(13, List.of(Map.of(
+      "_layer", "transportation",
+      "subclass", "platform",
+      "ref", "<null>",
+      "_type", "polygon"
+    )), process(platform));
+  }
+
+  @Test
   void testPedestrianArea() {
     Map<String, Object> pedestrianArea = Map.of(
       "_layer", "transportation",
